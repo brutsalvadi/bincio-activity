@@ -1,0 +1,248 @@
+---
+import Base from '../../layouts/Base.astro';
+const baseUrl = import.meta.env.BASE_URL ?? '/';
+---
+<Base title="Record activity — BincioActivity">
+  <div class="max-w-lg mx-auto">
+    <h1 class="text-xl font-bold text-white mb-1">Record activity</h1>
+    <p class="text-sm text-zinc-400 mb-6">
+      Record a GPS track and convert it to BAS format directly on your device.
+    </p>
+
+    <!-- Sport selector -->
+    <div class="mb-4">
+      <label class="block text-xs text-zinc-500 mb-1">Sport</label>
+      <div class="flex flex-wrap gap-2" id="sport-picker">
+        {[
+          ['cycling',  '🚴'], ['running', '🏃'], ['hiking', '🥾'],
+          ['walking', '🚶'], ['swimming', '🏊'], ['skiing', '⛷️'], ['other', '⚡'],
+        ].map(([s, icon]) => (
+          <button
+            data-sport={s}
+            class="sport-btn px-3 py-1.5 rounded-full text-sm border border-zinc-700 text-zinc-400 transition-colors"
+          >{icon} {s.charAt(0).toUpperCase() + s.slice(1)}</button>
+        ))}
+      </div>
+    </div>
+
+    <!-- Title -->
+    <div class="mb-4">
+      <label class="block text-xs text-zinc-500 mb-1">Activity title (optional)</label>
+      <input
+        id="rec-title"
+        type="text"
+        placeholder="Morning ride"
+        class="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-sm text-white placeholder-zinc-600 outline-none focus:border-blue-500"
+      />
+    </div>
+
+    <!-- Live stats -->
+    <div class="grid grid-cols-3 gap-3 text-center mb-4">
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-3">
+        <p id="stat-dist" class="text-2xl font-bold text-white">0.0</p>
+        <p class="text-xs text-zinc-500">km</p>
+      </div>
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-3">
+        <p id="stat-time" class="text-2xl font-bold text-white">0:00</p>
+        <p class="text-xs text-zinc-500">duration</p>
+      </div>
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-3">
+        <p id="stat-pts" class="text-2xl font-bold text-white">0</p>
+        <p class="text-xs text-zinc-500">points</p>
+      </div>
+    </div>
+
+    <!-- GPS accuracy indicator -->
+    <p id="gps-accuracy" class="text-xs text-zinc-500 text-center mb-4"></p>
+
+    <!-- Controls -->
+    <div class="flex gap-3">
+      <button
+        id="btn-start"
+        class="flex-1 py-3 rounded-xl font-semibold text-sm text-white transition-colors"
+        style="background:#22c55e"
+      >▶ Start</button>
+      <button
+        id="btn-pause"
+        style="display:none"
+        class="flex-1 py-3 rounded-xl font-semibold text-sm text-white bg-yellow-600 hover:bg-yellow-500 transition-colors"
+      >⏸ Pause</button>
+      <button
+        id="btn-stop"
+        style="display:none"
+        class="flex-1 py-3 rounded-xl font-semibold text-sm text-white bg-red-600 hover:bg-red-500 transition-colors"
+      >⏹ Stop & convert</button>
+    </div>
+
+    <p id="rec-status" class="mt-3 text-xs text-zinc-500 text-center" style="min-height:1.25rem"></p>
+  </div>
+</Base>
+
+<script define:vars={{ baseUrl }}>
+  // ── Sport picker ────────────────────────────────────────────────────────────
+  let selectedSport = 'cycling';
+  document.querySelectorAll('.sport-btn').forEach(btn => {
+    if (btn.dataset.sport === selectedSport) btn.classList.add('border-blue-500', 'text-white');
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.sport-btn').forEach(b => b.classList.remove('border-blue-500', 'text-white'));
+      btn.classList.add('border-blue-500', 'text-white');
+      selectedSport = btn.dataset.sport;
+    });
+  });
+
+  // ── State ───────────────────────────────────────────────────────────────────
+  let recording = false;
+  let paused = false;
+  let points = [];       // {lat, lon, ele, speed, time, accuracy}
+  let watchId = null;
+  let startTime = null;
+  let timerInterval = null;
+  let totalDistance = 0;
+
+  const btnStart = document.getElementById('btn-start');
+  const btnPause = document.getElementById('btn-pause');
+  const btnStop  = document.getElementById('btn-stop');
+  const recStatus = document.getElementById('rec-status');
+
+  // ── GPS ─────────────────────────────────────────────────────────────────────
+  async function getGeolocation() {
+    // Use Capacitor Geolocation if available, fall back to browser API
+    if (window.Capacitor?.isNativePlatform()) {
+      const { Geolocation } = await import('@capacitor/geolocation');
+      return Geolocation;
+    }
+    // Browser fallback — wraps navigator.geolocation in the same interface
+    return {
+      watchPosition: (opts, callback) => {
+        const id = navigator.geolocation.watchPosition(
+          pos => callback(pos, null),
+          err => callback(null, err),
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+        );
+        return Promise.resolve(id);
+      },
+      clearWatch: ({ id }) => navigator.geolocation.clearWatch(id),
+    };
+  }
+
+  function haversineM(lat1, lon1, lat2, lon2) {
+    const R = 6371000, r = Math.PI / 180;
+    const dLat = (lat2 - lat1) * r, dLon = (lon2 - lon1) * r;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*r)*Math.cos(lat2*r)*Math.sin(dLon/2)**2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+
+  // ── Controls ─────────────────────────────────────────────────────────────────
+  btnStart.addEventListener('click', async () => {
+    if (!navigator.geolocation && !window.Capacitor?.isNativePlatform()) {
+      recStatus.textContent = 'GPS not available on this device.';
+      return;
+    }
+    btnStart.style.display = 'none';
+    btnPause.style.display = '';
+    btnStop.style.display  = '';
+    recording = true;
+    paused = false;
+    points = [];
+    totalDistance = 0;
+    startTime = Date.now();
+
+    timerInterval = setInterval(updateTimer, 1000);
+    recStatus.textContent = 'Waiting for GPS fix…';
+
+    try {
+      const geo = await getGeolocation();
+      watchId = await geo.watchPosition(
+        { enableHighAccuracy: true, timeout: 10000 },
+        (pos, err) => {
+          if (err) { recStatus.textContent = 'GPS error: ' + (err.message || err); return; }
+          if (!recording || paused) return;
+          const { latitude: lat, longitude: lon, altitude: ele, speed, accuracy } = pos.coords;
+          if (points.length > 0) {
+            const prev = points[points.length - 1];
+            totalDistance += haversineM(prev.lat, prev.lon, lat, lon);
+          }
+          points.push({ lat, lon, ele: ele ?? null, speed: speed ?? null, time: new Date().toISOString(), accuracy });
+          document.getElementById('stat-pts').textContent = points.length;
+          document.getElementById('stat-dist').textContent = (totalDistance / 1000).toFixed(2);
+          document.getElementById('gps-accuracy').textContent = accuracy ? `GPS accuracy: ±${Math.round(accuracy)} m` : '';
+          recStatus.textContent = 'Recording…';
+        },
+      );
+    } catch (e) {
+      recStatus.textContent = 'Could not start GPS: ' + e.message;
+    }
+  });
+
+  btnPause.addEventListener('click', () => {
+    paused = !paused;
+    btnPause.textContent = paused ? '▶ Resume' : '⏸ Pause';
+    recStatus.textContent = paused ? 'Paused' : 'Recording…';
+  });
+
+  btnStop.addEventListener('click', async () => {
+    recording = false;
+    clearInterval(timerInterval);
+    if (watchId !== null) {
+      try {
+        const geo = await getGeolocation();
+        await geo.clearWatch({ id: watchId });
+      } catch (_) {}
+      watchId = null;
+    }
+    if (points.length < 2) {
+      recStatus.textContent = 'Not enough points recorded (minimum 2).';
+      btnStart.style.display = '';
+      btnPause.style.display = 'none';
+      btnStop.style.display  = 'none';
+      return;
+    }
+    exportAndConvert();
+  });
+
+  // ── Timer ───────────────────────────────────────────────────────────────────
+  function updateTimer() {
+    if (!startTime) return;
+    const s = Math.floor((Date.now() - startTime) / 1000);
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    document.getElementById('stat-time').textContent =
+      h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
+             : `${m}:${String(sec).padStart(2,'0')}`;
+  }
+
+  // ── GPX export → /convert/ ──────────────────────────────────────────────────
+  function exportAndConvert() {
+    const title = document.getElementById('rec-title').value.trim() || 'Recorded activity';
+    const gpx = buildGPX(points, title, selectedSport);
+    const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+
+    // Pass the GPX to the convert page via a temporary object URL stored in sessionStorage
+    const reader = new FileReader();
+    reader.onload = () => {
+      sessionStorage.setItem('pending_convert', JSON.stringify({
+        name: `${title.replace(/[^a-z0-9]/gi, '_')}.gpx`,
+        dataUrl: reader.result,
+      }));
+      window.location.href = `${baseUrl}convert/`;
+    };
+    reader.readAsDataURL(blob);
+  }
+
+  function buildGPX(pts, name, sport) {
+    const lines = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<gpx version="1.1" creator="BincioActivity" xmlns="http://www.topografix.com/GPX/1/1">',
+      `  <metadata><name>${escXml(name)}</name></metadata>`,
+      `  <trk><name>${escXml(name)}</name><type>${escXml(sport)}</type><trkseg>`,
+    ];
+    for (const p of pts) {
+      const ele = p.ele !== null ? `<ele>${p.ele.toFixed(1)}</ele>` : '';
+      const spd = p.speed !== null ? `<extensions><speed>${p.speed.toFixed(3)}</speed></extensions>` : '';
+      lines.push(`    <trkpt lat="${p.lat}" lon="${p.lon}"><time>${p.time}</time>${ele}${spd}</trkpt>`);
+    }
+    lines.push('  </trkseg></trk>', '</gpx>');
+    return lines.join('\n');
+  }
+
+  function escXml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>

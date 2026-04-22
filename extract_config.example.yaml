@@ -1,0 +1,31 @@
+owner:
+  handle: yourname
+  display_name: Your Name
+
+input:
+  dirs:
+    - ~/Activities/gpx
+    - ~/Activities/fit
+  # Strava bulk export metadata — provides names, descriptions, gear
+  # metadata_csv: ~/strava_export/activities.csv
+
+output:
+  dir: ~/bincio_data
+
+default_privacy: public
+
+sensors:
+  heart_rate: true
+  cadence: true
+  temperature: true
+  power: true
+
+track:
+  simplify: rdp
+  rdp_epsilon: 0.0001   # ~11m at equator
+  timeseries_hz: 1       # 1 sample/second max
+
+classifier:
+  enabled: false          # ML activity type classifier (requires scikit-learn extra)
+
+incremental: true         # skip files whose hash hasn't changed since last run

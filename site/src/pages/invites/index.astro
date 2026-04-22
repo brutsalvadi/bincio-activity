@@ -1,0 +1,116 @@
+---
+import Base from '../../layouts/Base.astro';
+---
+<Base title="Invites — BincioActivity">
+  <div class="max-w-lg mx-auto mt-12 px-4">
+    <div class="flex items-center justify-between mb-6">
+      <h1 class="text-2xl font-bold text-white">Your invites</h1>
+      <button id="gen-btn"
+        class="px-4 py-2 rounded-lg bg-[--accent] hover:opacity-90 text-white text-sm font-medium transition-opacity">
+        Generate invite
+      </button>
+    </div>
+
+    <p id="invite-error" class="text-red-400 text-sm mb-4 hidden"></p>
+
+    <ul id="invite-list" class="space-y-3">
+      <li class="text-zinc-500 text-sm">Loading…</li>
+    </ul>
+  </div>
+</Base>
+
+<script>
+  const listEl = document.getElementById('invite-list')!;
+  const errEl    = document.getElementById('invite-error')!;
+
+  function renderInvite(inv: { code: string; used: boolean; used_by: string | null; created_at: number }) {
+    const li = document.createElement('li');
+    li.className = 'flex items-center justify-between rounded-xl bg-zinc-900 border border-zinc-800 px-4 py-3';
+
+    const date = new Date(inv.created_at * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    const registerUrl = `${window.location.origin}/register/?code=${inv.code}`;
+
+    li.innerHTML = `
+      <div>
+        <span class="font-mono text-lg tracking-widest ${inv.used ? 'text-zinc-600 line-through' : 'text-white'}">${inv.code}</span>
+        <p class="text-xs text-zinc-500 mt-0.5">
+          ${inv.used ? `Used by @${inv.used_by}` : `Created ${date}`}
+        </p>
+      </div>
+      ${!inv.used ? `
+        <button data-link="${registerUrl}"
+          class="copy-btn text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors">
+          Copy link
+        </button>
+      ` : ''}
+    `;
+    return li;
+  }
+
+  function fallbackCopy(text: string, done: () => void) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (_) {}
+    document.body.removeChild(ta);
+  }
+
+  async function loadInvites() {
+    try {
+      const r = await fetch('/api/invites', { credentials: 'include' });
+      if (r.status === 401) {
+        window.location.href = `/login/?next=${encodeURIComponent(window.location.pathname)}`;
+        return;
+      }
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const invites = await r.json();
+      listEl.innerHTML = '';
+      if (invites.length === 0) {
+        listEl.innerHTML = '<li class="text-zinc-500 text-sm">No invites yet.</li>';
+        return;
+      }
+      for (const inv of invites) listEl.appendChild(renderInvite(inv));
+
+      // Copy link buttons
+      listEl.querySelectorAll('.copy-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const text = (btn as HTMLElement).dataset.link ?? '';
+          const done = () => {
+            btn.textContent = 'Copied!';
+            setTimeout(() => { btn.textContent = 'Copy link'; }, 2000);
+          };
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+          } else {
+            fallbackCopy(text, done);
+          }
+        });
+      });
+    } catch (e: any) {
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+    }
+  }
+
+  document.getElementById('gen-btn')?.addEventListener('click', async () => {
+    errEl.classList.add('hidden');
+    try {
+      const r = await fetch('/api/invites', { method: 'POST', credentials: 'include' });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        errEl.textContent = d.detail ?? 'Could not generate invite';
+        errEl.classList.remove('hidden');
+        return;
+      }
+      await loadInvites();
+    } catch (e: any) {
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+    }
+  });
+
+  loadInvites();
+</script>

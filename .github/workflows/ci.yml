@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  python:
+    name: Python tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.0.0
+      - run: uv sync --extra serve --extra edit --extra strava
+      - run: uv run pytest
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci
+      - name: Create stub data dir for SSG build
+        run: |
+          mkdir -p /tmp/bincio_ci/activities
+          echo '{"bas_version":"1.0","owner":{"handle":"ci","display_name":"CI"},"generated_at":"2024-01-01T00:00:00Z","shards":[],"activities":[]}' \
+            > /tmp/bincio_ci/index.json
+      - run: npm run build
+        env:
+          BINCIO_DATA_DIR: /tmp/bincio_ci

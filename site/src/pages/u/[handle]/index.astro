@@ -1,0 +1,44 @@
+---
+/**
+ * Per-user profile / feed page: /u/{handle}/
+ *
+ * Shows only this user's activities. In multi-user mode, getStaticPaths
+ * reads the root shard manifest to discover all handles.
+ */
+import Base from '../../../layouts/Base.astro';
+import ActivityFeed from '../../../components/ActivityFeed.svelte';
+import { readShardHandles } from '../../../lib/manifest';
+
+export function getStaticPaths() {
+  return readShardHandles().map(({ handle, url }) => ({
+    params: { handle },
+    props: { handle, shardUrl: url },
+  }));
+}
+
+const { handle, shardUrl } = Astro.props as { handle: string; shardUrl: string };
+const base = import.meta.env.BASE_URL;
+---
+<Base title={`@${handle} — BincioActivity`}>
+  <div class="flex items-center gap-4 mb-2">
+    <div>
+      <h1 class="text-2xl font-bold text-white mb-0.5">@{handle}</h1>
+      <nav id="profile-subnav" class="flex gap-4 mt-1">
+        <a href={`${base}u/${handle}/`} class="text-sm text-[--accent]">Feed</a>
+        <a href={`${base}u/${handle}/stats/`} class="text-sm text-zinc-400 hover:text-white transition-colors">Stats</a>
+        <a href={`${base}u/${handle}/athlete/`} class="text-sm text-zinc-400 hover:text-white transition-colors">Athlete</a>
+      </nav>
+    </div>
+  </div>
+  <ActivityFeed {base} filterHandle={handle} profileIndexUrl={shardUrl} client:only="svelte" />
+</Base>
+<script define:vars={{ handle }}>
+  function applyMeCheck(me) {
+    if (me === handle) document.getElementById('profile-subnav')?.remove();
+  }
+  if (window.__bincioMe !== undefined) {
+    applyMeCheck(window.__bincioMe);
+  } else {
+    window.addEventListener('bincio:me', e => applyMeCheck(e.detail), { once: true });
+  }
+</script>

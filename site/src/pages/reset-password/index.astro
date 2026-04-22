@@ -1,0 +1,87 @@
+---
+import Base from '../../layouts/Base.astro';
+---
+<Base title="Reset password — BincioActivity" public={true}>
+  <div class="max-w-sm mx-auto mt-16 px-4">
+    <h1 class="text-2xl font-bold text-white mb-2 text-center">Reset password</h1>
+    <p class="text-zinc-500 text-sm text-center mb-2">Enter the reset code you received from the admin.</p>
+    <p class="text-zinc-600 text-xs text-center mb-6">Don't have a code? Contact the instance admin — they can generate one for you from the admin panel. Codes expire after 24 hours.</p>
+
+    <form id="reset-form" class="space-y-4">
+      <div>
+        <label class="block text-sm text-zinc-400 mb-1" for="code">Reset code</label>
+        <input id="code" name="code" type="text" autocomplete="off"
+          class="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white font-mono uppercase tracking-widest placeholder-zinc-500 focus:outline-none focus:border-[--accent]"
+          placeholder="XXXXXXXX" maxlength="8" required />
+      </div>
+      <div>
+        <label class="block text-sm text-zinc-400 mb-1" for="handle">Handle</label>
+        <input id="handle" name="handle" type="text" autocomplete="username"
+          class="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white placeholder-zinc-500 focus:outline-none focus:border-[--accent]"
+          placeholder="your handle" required />
+      </div>
+      <div>
+        <label class="block text-sm text-zinc-400 mb-1" for="password">New password</label>
+        <input id="password" name="password" type="password" autocomplete="new-password"
+          class="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white focus:outline-none focus:border-[--accent]"
+          minlength="8" required />
+        <p class="text-zinc-600 text-xs mt-1">At least 8 characters</p>
+      </div>
+      <p id="reset-error" class="text-red-400 text-sm hidden"></p>
+      <p id="reset-ok" class="text-green-400 text-sm hidden">Password updated. <a href="/login/" class="underline">Sign in</a></p>
+      <button type="submit"
+        class="w-full py-2 rounded-lg bg-[--accent] hover:opacity-90 text-white font-medium transition-opacity">
+        Set new password
+      </button>
+    </form>
+
+    <p class="text-center text-zinc-500 text-sm mt-6">
+      <a href="/login/" class="text-[--accent] hover:underline">Back to sign in</a>
+    </p>
+  </div>
+</Base>
+
+<script>
+  // Pre-fill code and handle from query params if provided
+  const params = new URLSearchParams(window.location.search);
+  const codeParam   = params.get('code');
+  const handleParam = params.get('handle');
+  if (codeParam)   (document.getElementById('code')   as HTMLInputElement).value = codeParam.toUpperCase();
+  if (handleParam) (document.getElementById('handle') as HTMLInputElement).value = handleParam;
+
+  document.getElementById('reset-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target as HTMLFormElement;
+    const errEl = document.getElementById('reset-error')!;
+    const okEl  = document.getElementById('reset-ok')!;
+    errEl.classList.add('hidden');
+    okEl.classList.add('hidden');
+
+    const body = {
+      code:     (form.querySelector('#code')     as HTMLInputElement).value.trim().toUpperCase(),
+      handle:   (form.querySelector('#handle')   as HTMLInputElement).value.trim().toLowerCase(),
+      password: (form.querySelector('#password') as HTMLInputElement).value,
+    };
+
+    try {
+      const r = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        errEl.textContent = d.detail ?? 'Reset failed';
+        errEl.classList.remove('hidden');
+        return;
+      }
+      okEl.classList.remove('hidden');
+      (e.target as HTMLFormElement).querySelectorAll('input, button').forEach(
+        el => (el as HTMLInputElement).disabled = true
+      );
+    } catch {
+      errEl.textContent = 'Could not reach server';
+      errEl.classList.remove('hidden');
+    }
+  });
+</script>

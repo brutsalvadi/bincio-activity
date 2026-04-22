@@ -1,0 +1,360 @@
+---
+import Base from '../../layouts/Base.astro';
+const editUrl = import.meta.env.PUBLIC_EDIT_URL ?? '';
+const baseUrl = import.meta.env.BASE_URL ?? '/';
+---
+<Base title="Convert activity — BincioActivity">
+  <div class="max-w-lg mx-auto">
+    <h1 class="text-xl font-bold text-white mb-1">Convert activity</h1>
+    <p class="text-sm text-zinc-400 mb-6">
+      Convert a GPX, FIT, or TCX file to BAS format — entirely in your browser, nothing uploaded.
+    </p>
+
+    <!-- Step 1: pick file -->
+    <div id="step-pick">
+      <div
+        id="conv-drop"
+        class="border-2 border-dashed border-zinc-700 rounded-xl p-10 text-center text-zinc-500 text-sm cursor-pointer hover:border-zinc-500 hover:text-zinc-300 transition-colors"
+      >
+        <div class="text-4xl mb-3">📁</div>
+        <div id="conv-drop-label">Drop a FIT, GPX, or TCX file<br/>or tap to browse</div>
+        <input id="conv-input" type="file" accept=".fit,.gpx,.tcx,.fit.gz,.gpx.gz,.tcx.gz" class="hidden" />
+      </div>
+    </div>
+
+    <!-- Step 2: loading / converting -->
+    <div id="step-loading" style="display:none" class="text-center py-12">
+      <div id="conv-spinner" class="text-4xl mb-4 animate-spin inline-block">⚙</div>
+      <p id="conv-loading-msg" class="text-zinc-400 text-sm">Loading converter…</p>
+      <div class="mt-4 w-full bg-zinc-800 rounded-full h-1.5">
+        <div id="conv-progress-bar" class="bg-blue-500 h-1.5 rounded-full transition-all duration-300" style="width:0%"></div>
+      </div>
+    </div>
+
+    <!-- Step 3: result -->
+    <div id="step-result" style="display:none">
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5 mb-4">
+        <div class="flex items-center gap-3 mb-4">
+          <span id="res-sport-icon" class="text-2xl"></span>
+          <div>
+            <h2 id="res-title" class="font-semibold text-white"></h2>
+            <p id="res-date" class="text-xs text-zinc-500"></p>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-3 text-center mb-4">
+          <div>
+            <p id="res-dist" class="text-lg font-bold text-white">—</p>
+            <p class="text-xs text-zinc-500">Distance</p>
+          </div>
+          <div>
+            <p id="res-time" class="text-lg font-bold text-white">—</p>
+            <p class="text-xs text-zinc-500">Duration</p>
+          </div>
+          <div>
+            <p id="res-elev" class="text-lg font-bold text-white">—</p>
+            <p class="text-xs text-zinc-500">Elevation</p>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-2">
+          <button id="btn-save-local" class="w-full py-2 px-4 rounded-lg text-sm font-medium text-white transition-colors" style="background:#3b82f6">
+            📱 Save to this device
+          </button>
+          <button id="btn-download-json" class="w-full py-2 px-4 rounded-lg text-sm font-medium bg-zinc-700 hover:bg-zinc-600 text-white transition-colors">
+            ⬇ Download BAS JSON
+          </button>
+          <button id="btn-download-geojson" class="w-full py-2 px-4 rounded-lg text-sm font-medium bg-zinc-700 hover:bg-zinc-600 text-white transition-colors" style="display:none">
+            ⬇ Download GeoJSON track
+          </button>
+          {editUrl && (
+            <button id="btn-save" class="w-full py-2 px-4 rounded-lg text-sm font-medium bg-zinc-800 hover:bg-zinc-700 text-white transition-colors border border-zinc-700">
+              ☁ Save to cloud instance
+            </button>
+          )}
+        </div>
+        <p id="conv-save-status" class="mt-2 text-xs text-center" style="min-height:1.25rem"></p>
+      </div>
+      <button id="btn-convert-another" class="text-sm text-zinc-500 hover:text-white transition-colors">
+        ← Convert another file
+      </button>
+    </div>
+
+    <!-- Step 4: error -->
+    <div id="step-error" style="display:none" class="text-center py-12">
+      <div class="text-4xl mb-3">⚠</div>
+      <p id="conv-error-msg" class="text-red-400 text-sm mb-4"></p>
+      <button id="btn-retry" class="text-sm text-zinc-500 hover:text-white transition-colors">← Try another file</button>
+    </div>
+  </div>
+</Base>
+
+<div id="conv-config" data-edit-url={editUrl} data-base-url={baseUrl} style="display:none"></div>
+
+<script>
+  import { saveActivityLocally } from '../../lib/localstore';
+  import { formatDate, formatTime } from '../../lib/format';
+
+  // ── Config ──────────────────────────────────────────────────────────────────
+  const _cfg     = document.getElementById('conv-config') as HTMLElement;
+  const editUrl  = _cfg.dataset.editUrl  ?? '';
+  const baseUrl  = _cfg.dataset.baseUrl  ?? '/';
+
+  // ── DOM refs ────────────────────────────────────────────────────────────────
+  const stepPick    = document.getElementById('step-pick');
+  const stepLoading = document.getElementById('step-loading');
+  const stepResult  = document.getElementById('step-result');
+  const stepError   = document.getElementById('step-error');
+  const drop        = document.getElementById('conv-drop');
+  const input       = document.getElementById('conv-input');
+  const dropLabel   = document.getElementById('conv-drop-label');
+  const loadingMsg  = document.getElementById('conv-loading-msg');
+  const progressBar = document.getElementById('conv-progress-bar');
+  const errorMsg    = document.getElementById('conv-error-msg');
+  const saveStatus  = document.getElementById('conv-save-status');
+
+  function showStep(name) {
+    stepPick.style.display    = name === 'pick'    ? '' : 'none';
+    stepLoading.style.display = name === 'loading' ? '' : 'none';
+    stepResult.style.display  = name === 'result'  ? '' : 'none';
+    stepError.style.display   = name === 'error'   ? '' : 'none';
+  }
+
+  function setProgress(pct, msg) {
+    progressBar.style.width = pct + '%';
+    if (msg) loadingMsg.textContent = msg;
+  }
+
+  // ── Auto-load from recorder (sessionStorage handoff) ───────────────────────
+  window.addEventListener('load', () => {
+    const pending = sessionStorage.getItem('pending_convert');
+    if (pending) {
+      sessionStorage.removeItem('pending_convert');
+      try {
+        const { name, dataUrl } = JSON.parse(pending);
+        fetch(dataUrl).then(r => r.blob()).then(blob => {
+          startConversion(new File([blob], name, { type: 'application/gpx+xml' }));
+        });
+      } catch (_) {}
+    }
+  });
+
+  // ── File picking ────────────────────────────────────────────────────────────
+  drop.addEventListener('click', () => input.click());
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.style.borderColor = 'var(--accent)'; });
+  drop.addEventListener('dragleave', () => { drop.style.borderColor = ''; });
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); drop.style.borderColor = '';
+    if (e.dataTransfer?.files[0]) startConversion(e.dataTransfer.files[0]);
+  });
+  input.addEventListener('change', () => { if (input.files?.[0]) startConversion(input.files[0]); });
+  document.getElementById('btn-retry').addEventListener('click', reset);
+  document.getElementById('btn-convert-another').addEventListener('click', reset);
+
+  function reset() {
+    input.value = '';
+    dropLabel.innerHTML = 'Drop a FIT, GPX, or TCX file<br/>or tap to browse';
+    showStep('pick');
+  }
+
+  // ── Pyodide state ───────────────────────────────────────────────────────────
+  let pyodide = null;
+  let pyodideReady = false;
+  let pyodideLoading = false;
+
+  async function ensurePyodide() {
+    if (pyodideReady) return;
+    if (pyodideLoading) {
+      // Wait for the ongoing load
+      while (!pyodideReady) await new Promise(r => setTimeout(r, 100));
+      return;
+    }
+    pyodideLoading = true;
+
+    setProgress(5, 'Loading Python runtime…');
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js';
+    await new Promise((resolve, reject) => {
+      script.onload = resolve; script.onerror = reject;
+      document.head.appendChild(script);
+    });
+
+    setProgress(20, 'Initialising Python…');
+    pyodide = await window.loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/' });
+
+    setProgress(40, 'Loading packages (lxml, pyyaml, micropip)…');
+    await pyodide.loadPackage(['lxml', 'pyyaml', 'micropip']);
+
+    setProgress(60, 'Installing fitdecode, gpxpy, rdp…');
+    await pyodide.runPythonAsync(`
+import micropip
+await micropip.install(['fitdecode', 'gpxpy'])
+`);
+
+    setProgress(80, 'Loading bincio extract pipeline…');
+    const wheelUrl = new URL('/bincio-0.1.0-py3-none-any.whl', window.location.origin).href;
+    await pyodide.runPythonAsync(`
+import micropip
+await micropip.install('${wheelUrl}', deps=False)
+`);
+
+    setProgress(100, 'Ready.');
+    pyodideReady = true;
+    pyodideLoading = false;
+  }
+
+  // ── Conversion ──────────────────────────────────────────────────────────────
+  let lastResult = null;
+
+  async function startConversion(file) {
+    showStep('loading');
+    setProgress(0, 'Loading converter…');
+
+    let arrayBuffer;
+    try {
+      arrayBuffer = await file.arrayBuffer();
+    } catch (e) {
+      showError('Could not read file: ' + e.message);
+      return;
+    }
+
+    try {
+      await ensurePyodide();
+    } catch (e) {
+      showError('Failed to load Python runtime: ' + e.message);
+      return;
+    }
+
+    setProgress(100, 'Converting…');
+
+    try {
+      // Write file to Pyodide virtual filesystem
+      const fname = file.name;
+      pyodide.FS.writeFile('/tmp/' + fname, new Uint8Array(arrayBuffer));
+
+      const resultJson = await pyodide.runPythonAsync(`
+import json, os, shutil
+from pathlib import Path
+from bincio.extract.parsers.factory import parse_file
+from bincio.extract.metrics import compute
+from bincio.extract.writer import build_summary, make_activity_id, write_activity
+
+outdir = Path('/tmp/bincio_out')
+if outdir.exists(): shutil.rmtree(outdir)
+outdir.mkdir()
+
+activity = parse_file(Path('/tmp/${fname.replace(/'/g, "\\'")}'))
+metrics  = compute(activity)
+act_id   = make_activity_id(activity)
+write_activity(activity, metrics, outdir, privacy='public', rdp_epsilon=0.0001)
+
+detail_path  = outdir / 'activities' / f'{act_id}.json'
+geojson_path = outdir / 'activities' / f'{act_id}.geojson'
+
+detail  = json.loads(detail_path.read_text())
+geojson = json.loads(geojson_path.read_text()) if geojson_path.exists() else None
+
+json.dumps({'id': act_id, 'detail': detail, 'geojson': geojson})
+`);
+
+      lastResult = JSON.parse(resultJson);
+      showResult(lastResult);
+    } catch (e) {
+      showError(e.message || String(e));
+    }
+  }
+
+  // ── Result display ──────────────────────────────────────────────────────────
+  const SPORT_ICONS = { cycling: '🚴', running: '🏃', hiking: '🥾', walking: '🚶', swimming: '🏊', skiing: '⛷️', other: '⚡' };
+
+  function showResult(r) {
+    const d = r.detail;
+    document.getElementById('res-sport-icon').textContent = SPORT_ICONS[d.sport] ?? '⚡';
+    document.getElementById('res-title').textContent = d.title || 'Untitled';
+    document.getElementById('res-date').textContent = d.started_at ? `${formatDate(d.started_at)} · ${formatTime(d.started_at)}` : '';
+
+    const distKm = d.distance_m ? (d.distance_m / 1000).toFixed(1) + ' km' : '—';
+    const dur = d.moving_time_s ?? d.duration_s;
+    const durStr = dur ? `${Math.floor(dur/3600)}h ${Math.floor((dur%3600)/60)}m` : '—';
+    const elevStr = d.elevation_gain_m ? Math.round(d.elevation_gain_m) + ' m' : '—';
+    document.getElementById('res-dist').textContent = distKm;
+    document.getElementById('res-time').textContent = durStr;
+    document.getElementById('res-elev').textContent = elevStr;
+
+    document.getElementById('btn-download-geojson').style.display = r.geojson ? '' : 'none';
+    showStep('result');
+  }
+
+  function showError(msg) {
+    errorMsg.textContent = msg;
+    showStep('error');
+  }
+
+  // ── Save locally (IndexedDB → service worker serves it in the feed) ─────────
+  document.getElementById('btn-save-local').addEventListener('click', async () => {
+    if (!lastResult) return;
+    const btn = document.getElementById('btn-save-local');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    saveStatus.style.color = 'var(--text-4)';
+    try {
+      await saveActivityLocally(lastResult.detail, lastResult.geojson ?? null);
+      btn.textContent = '✓ Saved to device';
+      btn.style.background = '#16a34a';
+      saveStatus.innerHTML = `Activity saved. <a href="${baseUrl}activity/local/?id=${lastResult.id}" style="color:#86efac;text-decoration:underline">View activity →</a>`;
+      saveStatus.style.color = '#4ade80';
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = '📱 Save to this device';
+      saveStatus.textContent = 'Save failed: ' + e.message;
+      saveStatus.style.color = '#f87171';
+    }
+  });
+
+  // ── Downloads ───────────────────────────────────────────────────────────────
+  function downloadJson(data, filename) {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  document.getElementById('btn-download-json').addEventListener('click', () => {
+    if (lastResult) downloadJson(lastResult.detail, lastResult.id + '.json');
+  });
+
+  document.getElementById('btn-download-geojson').addEventListener('click', () => {
+    if (lastResult?.geojson) downloadJson(lastResult.geojson, lastResult.id + '.geojson');
+  });
+
+  // ── Save to bincio ──────────────────────────────────────────────────────────
+  const saveBtn = document.getElementById('btn-save');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      if (!lastResult) return;
+      saveBtn.disabled = true;
+      saveStatus.textContent = 'Saving…';
+      saveStatus.style.color = 'var(--text-4)';
+
+      // Reconstruct a file blob from the detail JSON and POST as a virtual upload
+      // The edit server expects a raw activity file, so we use a dedicated endpoint instead
+      const target = (localStorage.getItem('bincio_edit_url') || editUrl).replace(/\/$/, '');
+      try {
+        const r = await fetch(`${target}/api/import-bas`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ detail: lastResult.detail, geojson: lastResult.geojson }),
+        });
+        if (!r.ok) throw new Error(await r.text());
+        const data = await r.json();
+        saveStatus.textContent = 'Saved!';
+        saveStatus.style.color = '#4ade80';
+        setTimeout(() => { window.location.href = `${baseUrl}activity/${data.id}/`; }, 800);
+      } catch (e) {
+        saveStatus.textContent = 'Error: ' + e.message;
+        saveStatus.style.color = '#f87171';
+        saveBtn.disabled = false;
+      }
+    });
+  }
+</script>

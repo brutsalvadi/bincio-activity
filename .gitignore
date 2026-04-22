@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+.idea*
+feedback*
+
+# uv
+uv.lock
+
+# Node / Astro
+site/node_modules/
+site/dist/
+site/.astro/
+
+# MkDocs
+mkdocs-site/
+
+# BAS data stores (user data, not committed to the tool repo)
+bincio_data/
+*.bincio_cache.json
+
+# Local config / secrets (never commit)
+.env
+extract_config.yaml
+
+# Local working / scratch files
+advice.md
+issues.md
+todo.md
+site/public/data
+site/public/*.whl
+.claude/settings.local.json
+dns.md
+ngix_bincio.md
+publish.sh
+docs/squash-for-github.md
+CLAUDE.md
+
+# Capacitor native projects
+# Commit these if you want to track native code changes;
+# omit these lines if you regenerate them from `npx cap add`
+site/android/
+site/ios/
+
+# Data
+data/*
+
+# OS
+.DS_Store

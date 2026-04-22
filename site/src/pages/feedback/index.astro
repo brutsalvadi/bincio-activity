@@ -1,0 +1,162 @@
+---
+import Base from '../../layouts/Base.astro';
+---
+<Base title="Feedback — BincioActivity">
+  <div class="max-w-lg mx-auto mt-12 px-4">
+    <h1 class="text-2xl font-bold text-white mb-2">Send feedback</h1>
+    <p class="text-sm text-zinc-500 mb-6">Report a bug, suggest a feature, or share anything useful. Plain text only — no account details needed.</p>
+
+    <form id="feedback-form" class="space-y-4">
+
+      <div>
+        <textarea
+          id="fb-text"
+          rows="6"
+          placeholder="What's on your mind?"
+          class="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white placeholder-zinc-500 text-sm focus:outline-none focus:border-[--accent] resize-none"
+        ></textarea>
+      </div>
+
+      <!-- Image upload -->
+      <div>
+        <p class="text-xs text-zinc-500 mb-2">Attach up to 3 screenshots (max 2 MB each)</p>
+        <div
+          id="fb-drop"
+          class="border-2 border-dashed border-zinc-700 rounded-lg p-5 text-center text-zinc-500 text-sm cursor-pointer hover:border-zinc-500 hover:text-zinc-300 transition-colors"
+        >
+          <span id="fb-drop-label">Drop images or click to browse</span>
+          <input id="fb-input" type="file" accept="image/*" multiple class="hidden" />
+        </div>
+        <div id="fb-previews" class="flex gap-2 flex-wrap mt-2"></div>
+      </div>
+
+      <p id="fb-error" class="text-red-400 text-sm hidden"></p>
+
+      <button
+        type="submit"
+        class="w-full py-2 rounded-lg bg-[--accent] hover:opacity-90 text-white font-medium text-sm transition-opacity"
+      >Send feedback</button>
+
+    </form>
+
+    <div id="fb-success" class="hidden text-center mt-12">
+      <p class="text-2xl mb-2">Thanks!</p>
+      <p class="text-zinc-400 text-sm">Your feedback has been received.</p>
+    </div>
+  </div>
+</Base>
+
+<script>
+  const MAX_IMAGES = 3;
+  const MAX_BYTES  = 2 * 1024 * 1024;
+
+  const form     = document.getElementById('feedback-form') as HTMLFormElement;
+  const drop     = document.getElementById('fb-drop')!;
+  const input    = document.getElementById('fb-input') as HTMLInputElement;
+  const previews = document.getElementById('fb-previews')!;
+  const errEl    = document.getElementById('fb-error')!;
+  const success  = document.getElementById('fb-success')!;
+
+  let selectedFiles: File[] = [];
+
+  function showError(msg: string) {
+    errEl.textContent = msg;
+    errEl.classList.remove('hidden');
+  }
+  function clearError() {
+    errEl.classList.add('hidden');
+  }
+
+  function renderPreviews() {
+    previews.innerHTML = '';
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const f = selectedFiles[i];
+      const url = URL.createObjectURL(f);
+      const wrap = document.createElement('div');
+      wrap.className = 'relative';
+      wrap.innerHTML = `
+        <img src="${url}" class="w-20 h-20 object-cover rounded-lg border border-zinc-700" />
+        <button type="button" data-i="${i}"
+          class="remove-btn absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-zinc-800 border border-zinc-600 text-zinc-300 hover:text-white text-xs flex items-center justify-center leading-none">
+          ×
+        </button>`;
+      previews.appendChild(wrap);
+    }
+    previews.querySelectorAll('.remove-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const i = parseInt((btn as HTMLElement).dataset.i ?? '0');
+        selectedFiles.splice(i, 1);
+        renderPreviews();
+        clearError();
+      });
+    });
+  }
+
+  function addFiles(newFiles: FileList | File[]) {
+    clearError();
+    for (const f of Array.from(newFiles)) {
+      if (selectedFiles.length >= MAX_IMAGES) {
+        showError(`Maximum ${MAX_IMAGES} images.`);
+        break;
+      }
+      if (f.size > MAX_BYTES) {
+        showError(`"${f.name}" exceeds 2 MB.`);
+        continue;
+      }
+      selectedFiles.push(f);
+    }
+    renderPreviews();
+    input.value = '';
+  }
+
+  drop.addEventListener('click', () => input.click());
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.style.borderColor = 'var(--accent)'; });
+  drop.addEventListener('dragleave', () => { drop.style.borderColor = ''; });
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.style.borderColor = '';
+    if (e.dataTransfer?.files.length) addFiles(e.dataTransfer.files);
+  });
+  input.addEventListener('change', () => { if (input.files?.length) addFiles(input.files); });
+
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    clearError();
+
+    const text = (document.getElementById('fb-text') as HTMLTextAreaElement).value.trim();
+    if (!text && selectedFiles.length === 0) {
+      showError('Please write something or attach an image.');
+      return;
+    }
+
+    const fd = new FormData();
+    fd.append('text', text);
+    for (const f of selectedFiles) fd.append('images', f);
+
+    const btn = form.querySelector('button[type=submit]') as HTMLButtonElement;
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+
+    try {
+      const r = await fetch('/api/feedback', { method: 'POST', credentials: 'include', body: fd });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(d.detail ?? `Server error ${r.status}`);
+      }
+      form.classList.add('hidden');
+      success.classList.remove('hidden');
+    } catch (err: any) {
+      showError(err.message);
+      btn.disabled = false;
+      btn.textContent = 'Send feedback';
+    }
+  });
+
+  // Redirect to login if not authenticated
+  (async () => {
+    try {
+      const r = await fetch('/api/me', { credentials: 'include' });
+      if (r.status === 401) window.location.href = `/login/?next=${encodeURIComponent(window.location.pathname)}`;
+    } catch (_) {}
+  })();
+</script>

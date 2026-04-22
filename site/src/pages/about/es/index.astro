@@ -1,0 +1,238 @@
+---
+import Base from '../../../layouts/Base.astro';
+const baseUrl = import.meta.env.BASE_URL ?? '/';
+const labels = {
+  community:   'Comunidad',
+  members:     'miembro',
+  members_pl:  'miembros',
+  day:         'día',
+  days:        'días',
+  invited_by:  'invitado por',
+  founder:     'fundador',
+};
+---
+<Base title="Acerca de — BincioActivity" public={true}>
+  <div class="max-w-2xl mx-auto">
+    <div class="flex items-baseline justify-between mb-1">
+      <h1 class="text-2xl font-bold text-white">Acerca de BincioActivity</h1>
+      <div class="flex gap-3 text-xs text-zinc-500">
+        <a href={`${baseUrl}about/`} class="hover:text-white transition-colors">EN</a>
+        <a href={`${baseUrl}about/it/`} class="hover:text-white transition-colors">IT</a>
+        <span class="text-zinc-300 font-medium">ES</span>
+        <a href={`${baseUrl}about/ca/`} class="hover:text-white transition-colors">CA</a>
+      </div>
+    </div>
+    <p class="text-sm text-zinc-500 mb-4">Seguimiento de actividades open-source y autoalojado</p>
+    <div class="flex flex-wrap gap-2 mb-8">
+      <a
+        href="https://ko-fi.com/brutsalvadi"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-90"
+        style="background:#FF5E5B; color:#fff;"
+      >
+        ☕ Apoya en Ko-fi
+      </a>
+      <a
+        id="feedback-btn"
+        href="/feedback/"
+        style="display:none"
+        class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-zinc-700 text-zinc-300 hover:text-white hover:border-zinc-500 transition-colors"
+      >
+        💬 Enviar comentarios
+      </a>
+    </div>
+
+    <div class="space-y-8 text-sm text-zinc-400 leading-relaxed">
+
+      <section id="stats-section" style="display:none">
+        <h2 class="text-base font-semibold text-white mb-3">Comunidad</h2>
+        <p id="stats-summary" class="text-zinc-500 text-xs mb-4"></p>
+        <div id="stats-tree" class="text-sm"></div>
+      </section>
+
+      <section>
+        <h2 class="text-base font-semibold text-white mb-2">¿Qué es esto?</h2>
+        <p>
+          BincioActivity es una plataforma gratuita y de código abierto para registrar tus
+          actividades al aire libre: ciclismo, running, senderismo y más. Está diseñada para
+          ser autoalojada: tú (o alguien de confianza) gestionas el servidor, y tus datos
+          permanecen bajo tu control.
+        </p>
+        <p class="mt-2">
+          Las actividades se almacenan en un formato JSON abierto llamado BAS (BincioActivity Schema),
+          diseñado para ser legible y portable. La plataforma no tiene analíticas ocultas,
+          no incluye publicidad y no comparte datos con terceros.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="text-base font-semibold text-white mb-2">Registro e invitaciones</h2>
+        <p>
+          Esta instancia es solo por invitación. Para registrarte necesitas un enlace de
+          invitación de un miembro existente — cada enlace es de un solo uso y está vinculado
+          a un código único.
+        </p>
+        <p class="mt-2">
+          Una vez que tengas una cuenta, puedes generar hasta <strong class="text-zinc-300">3 enlaces de invitación</strong> para
+          compartir con personas de confianza. Gestiona tus invitaciones desde la <a id="invites-link" href="invites/" class="text-blue-400 hover:text-blue-300 transition-colors">página de invitaciones</a>
+          (requiere inicio de sesión).
+        </p>
+      </section>
+
+      <section>
+        <h2 class="text-base font-semibold text-white mb-2">Tus datos en este servidor</h2>
+        <p>
+          Cuando subes un archivo FIT, GPX o TCX, el servidor lo convierte al formato BAS.
+          Por defecto, el archivo fuente original también se guarda en la carpeta
+          <code class="text-zinc-300 bg-zinc-800 px-1 rounded">originals/</code> de tu cuenta.
+          Puedes desactivar esta opción en el momento de la subida desmarcando
+          <em>"Conservar el archivo original en el servidor"</em>.
+        </p>
+        <p class="mt-2">
+          Se recomienda conservar los originales durante estas primeras etapas del proyecto:
+          si la cadena de procesamiento mejora (mejor suavizado de elevación, cálculo de velocidad,
+          detección de vueltas, etc.) podrás volver a importar tus archivos para aprovechar los
+          cambios. Si elegiste no conservar los originales, tendrías que subir los archivos
+          de nuevo manualmente.
+        </p>
+        <p class="mt-2">
+          Al sincronizar con Strava, los datos brutos obtenidos de la API de Strava también
+          pueden almacenarse localmente. Esto lo controla una configuración global del servidor
+          establecida por el operador.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="text-base font-semibold text-white mb-2">Software en fase temprana</h2>
+        <p>
+          BincioActivity está en desarrollo activo. El formato de datos, la cadena de procesamiento
+          y la API del servidor pueden cambiar entre versiones. Los cambios incompatibles son
+          posibles, especialmente en esta etapa. Cuando ocurran, volver a importar los archivos
+          originales es la forma más segura de actualizar tus datos.
+        </p>
+        <p class="mt-2">
+          No existe ninguna garantía de disponibilidad, integridad de datos ni compatibilidad
+          futura para ninguna versión en particular. Usa este software bajo tu propia
+          responsabilidad y mantén tus propias copias de seguridad de los datos importantes.
+        </p>
+      </section>
+
+      <section class="border border-zinc-800 rounded-xl p-4 bg-zinc-900/50">
+        <h2 class="text-base font-semibold text-white mb-2">Descargo de responsabilidad</h2>
+        <p>
+          BincioActivity se proporciona <strong class="text-zinc-300">"tal cual"</strong>, sin
+          garantía de ningún tipo. Los autores y operadores del servidor no aceptan ninguna
+          responsabilidad por:
+        </p>
+        <ul class="list-disc list-inside mt-2 space-y-1">
+          <li>Pérdida, corrupción o acceso no autorizado a tus datos de actividad</li>
+          <li>Datos expuestos por una mala configuración del servidor o la infraestructura</li>
+          <li>Inexactitudes en las estadísticas calculadas (distancia, elevación, frecuencia cardíaca, etc.)</li>
+          <li>Cualquier consecuencia derivada de actuar sobre la información mostrada por esta aplicación</li>
+        </ul>
+        <p class="mt-3">
+          Eres responsable de proteger tu cuenta con una contraseña segura, de revisar qué
+          datos compartes y de realizar tus propias copias de seguridad. Los datos de GPS y
+          salud pueden ser sensibles — reflexiona sobre qué subes y quién puede verlo.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="text-base font-semibold text-white mb-2">Código abierto</h2>
+        <p>
+          BincioActivity es software de código abierto. Eres libre de inspeccionar el código,
+          alojar tu propia instancia y contribuir con mejoras.
+        </p>
+      </section>
+
+    </div>
+  </div>
+</Base>
+
+<script define:vars={{ labels }}>
+(async () => {
+  try {
+    const me = await fetch('/api/me', { credentials: 'include' });
+    if (!me.ok) return;
+    const feedbackBtn = document.getElementById('feedback-btn');
+    if (feedbackBtn) feedbackBtn.style.display = '';
+  } catch { return; }
+  let data;
+  try {
+    const r = await fetch('/api/stats');
+    if (!r.ok) return;
+    data = await r.json();
+  } catch { return; }
+
+  const invLink = document.getElementById('invites-link');
+  if (invLink) invLink.href = '/invites/';
+
+  if (!data.user_count) return;
+
+  const section  = document.getElementById('stats-section');
+  const summary  = document.getElementById('stats-summary');
+  const treeEl   = document.getElementById('stats-tree');
+
+  const n = data.user_count;
+  summary.textContent = `${n} ${n === 1 ? labels.members : labels.members_pl}`;
+  section.style.display = '';
+
+  const byHandle = {};
+  for (const m of data.members) byHandle[m.handle] = m;
+  const children = {};
+  const roots = [];
+  for (const m of data.members) {
+    if (m.invited_by && byHandle[m.invited_by]) {
+      (children[m.invited_by] ??= []).push(m.handle);
+    } else {
+      roots.push(m.handle);
+    }
+  }
+
+  function formatDuration(days) {
+    if (days < 1)   return `< 1 ${labels.day}`;
+    if (days === 1) return `1 ${labels.day}`;
+    if (days < 30)  return `${days} ${labels.days}`;
+    const months = Math.floor(days / 30);
+    return months === 1 ? `1 mo` : `${months} mo`;
+  }
+
+  function renderNode(handle, depth) {
+    const m = byHandle[handle];
+    const indent = depth * 20;
+    const isRoot = !m.invited_by;
+    const sub = isRoot ? labels.founder : `${labels.invited_by} @${m.invited_by}`;
+
+    const row = document.createElement('div');
+    row.className = 'flex items-baseline gap-2 py-1.5 border-b border-zinc-800/50';
+    row.style.paddingLeft = `${indent}px`;
+    if (depth > 0) {
+      const connector = document.createElement('span');
+      connector.className = 'text-zinc-700 shrink-0';
+      connector.textContent = '└';
+      row.appendChild(connector);
+    }
+    const name = document.createElement('span');
+    name.className = 'text-white font-medium';
+    name.textContent = m.display_name || `@${handle}`;
+    row.appendChild(name);
+    const handle_el = document.createElement('span');
+    handle_el.className = 'text-zinc-600 text-xs';
+    handle_el.textContent = `@${handle}`;
+    row.appendChild(handle_el);
+    const spacer = document.createElement('span');
+    spacer.className = 'flex-1';
+    row.appendChild(spacer);
+    const meta = document.createElement('span');
+    meta.className = 'text-zinc-600 text-xs text-right shrink-0';
+    meta.innerHTML = `${formatDuration(m.member_for_days)}<br><span class="text-zinc-700">${sub}</span>`;
+    row.appendChild(meta);
+    treeEl.appendChild(row);
+
+    for (const child of (children[handle] ?? [])) renderNode(child, depth + 1);
+  }
+
+  for (const root of roots) renderNode(root, 0);
+})();
+</script>

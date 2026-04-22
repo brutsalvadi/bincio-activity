@@ -1,0 +1,40 @@
+---
+/**
+ * Per-user stats page: /u/{handle}/stats/
+ */
+import Base from '../../../../layouts/Base.astro';
+import StatsView from '../../../../components/StatsView.svelte';
+import { readShardHandles } from '../../../../lib/manifest';
+
+export function getStaticPaths() {
+  return readShardHandles().map(({ handle }) => ({
+    params: { handle },
+    props: { handle },
+  }));
+}
+
+const { handle } = Astro.props as { handle: string };
+const base = import.meta.env.BASE_URL;
+const indexUrl = `${base}data/${handle}/_merged/index.json`;
+---
+<Base title={`@${handle} Stats — BincioActivity`}>
+  <div class="pb-2">
+    <h1 class="text-2xl font-bold text-white mb-0.5">@{handle}</h1>
+    <nav id="profile-subnav" class="flex gap-4 mt-1 mb-6">
+      <a href={`${base}u/${handle}/`} class="text-sm text-zinc-400 hover:text-white transition-colors">Feed</a>
+      <a href={`${base}u/${handle}/stats/`} class="text-sm text-[--accent]">Stats</a>
+      <a href={`${base}u/${handle}/athlete/`} class="text-sm text-zinc-400 hover:text-white transition-colors">Athlete</a>
+    </nav>
+  </div>
+  <StatsView {indexUrl} client:only="svelte" />
+</Base>
+<script define:vars={{ handle }}>
+  function applyMeCheck(me) {
+    if (me === handle) document.getElementById('profile-subnav')?.remove();
+  }
+  if (window.__bincioMe !== undefined) {
+    applyMeCheck(window.__bincioMe);
+  } else {
+    window.addEventListener('bincio:me', e => applyMeCheck(e.detail), { once: true });
+  }
+</script>

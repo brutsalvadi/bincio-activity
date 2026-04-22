@@ -1,0 +1,274 @@
+graph LR
+
+  subgraph API
+    subgraph api_activity["activity"]
+      api__api_activity__activity_id_["GET /api/activity/{activity_id}"]
+      api__api_activity__activity_id_["POST /api/activity/{activity_id}"]
+      api__api_activity__activity_id_["DELETE /api/activity/{activity_id}"]
+      api__api_activity__activity_id__images["GET /api/activity/{activity_id}/images"]
+      api__api_activity__activity_id__images["POST /api/activity/{activity_id}/images"]
+      api__api_activity__activity_id__images__filename_["DELETE /api/activity/{activity_id}/images/{filename}"]
+    end
+    subgraph api_admin["admin"]
+      api__api_admin_users["GET /api/admin/users"]
+      api__api_admin_jobs["GET /api/admin/jobs"]
+      api__api_admin_disk["GET /api/admin/disk"]
+      api__api_admin_users__handle__reset_password_code["POST /api/admin/users/{handle}/reset-password-code"]
+      api__api_admin_users__handle__rebuild["POST /api/admin/users/{handle}/rebuild"]
+      api__api_admin_users__handle__activities["DELETE /api/admin/users/{handle}/activities"]
+    end
+    subgraph api_athlete["athlete"]
+      api__api_athlete["GET /api/athlete"]
+      api__api_athlete["POST /api/athlete"]
+    end
+    subgraph api_auth["auth"]
+      api__api_auth_login["POST /api/auth/login"]
+      api__api_auth_logout["POST /api/auth/logout"]
+      api__api_auth_reset_password["POST /api/auth/reset-password"]
+    end
+    subgraph api_feedback["feedback"]
+      api__api_feedback["POST /api/feedback"]
+    end
+    subgraph api_garmin["garmin"]
+      api__api_garmin_status["GET /api/garmin/status"]
+      api__api_garmin_connect["POST /api/garmin/connect"]
+      api__api_garmin_disconnect["POST /api/garmin/disconnect"]
+      api__api_garmin_sync_stream["GET /api/garmin/sync/stream"]
+    end
+    subgraph api_invites["invites"]
+      api__api_invites["GET /api/invites"]
+      api__api_invites["POST /api/invites"]
+    end
+    subgraph api_me["me"]
+      api__api_me["GET /api/me"]
+    end
+    subgraph api_register["register"]
+      api__api_register["POST /api/register"]
+    end
+    subgraph api_stats["stats"]
+      api__api_stats["GET /api/stats"]
+    end
+    subgraph api_strava["strava"]
+      api__api_strava_status["GET /api/strava/status"]
+      api__api_strava_reset["POST /api/strava/reset"]
+      api__api_strava_auth_url["GET /api/strava/auth-url"]
+      api__api_strava_callback["GET /api/strava/callback"]
+      api__api_strava_sync_stream["GET /api/strava/sync/stream"]
+      api__api_strava_sync["POST /api/strava/sync"]
+    end
+    subgraph api_upload["upload"]
+      api__api_upload["POST /api/upload"]
+      api__api_upload_strava_zip["POST /api/upload/strava-zip"]
+    end
+  end
+
+  subgraph Pages
+    site_src_pages_about_ca_index_astro["pages/about/ca/"]
+    site_src_pages_about_es_index_astro["pages/about/es/"]
+    site_src_pages_about_index_astro["pages/about/"]
+    site_src_pages_about_it_index_astro["pages/about/it/"]
+    site_src_pages_activity__id__astro["pages/activity/[id].astro"]
+    site_src_pages_activity_index_astro["pages/activity/"]
+    site_src_pages_activity_local_index_astro["pages/activity/local/"]
+    site_src_pages_admin_index_astro["pages/admin/"]
+    site_src_pages_athlete_index_astro["pages/athlete/"]
+    site_src_pages_community_index_astro["pages/community/"]
+    site_src_pages_convert_index_astro["pages/convert/"]
+    site_src_pages_feedback_index_astro["pages/feedback/"]
+    site_src_pages_index_astro["pages/"]
+    site_src_pages_invites_index_astro["pages/invites/"]
+    site_src_pages_login_index_astro["pages/login/"]
+    site_src_pages_record_index_astro["pages/record/"]
+    site_src_pages_register_index_astro["pages/register/"]
+    site_src_pages_reset_password_index_astro["pages/reset-password/"]
+    site_src_pages_stats_index_astro["pages/stats/"]
+    site_src_pages_u__handle__athlete_index_astro["pages/u/[handle]/athlete/"]
+    site_src_pages_u__handle__index_astro["pages/u/[handle]/"]
+    site_src_pages_u__handle__stats_index_astro["pages/u/[handle]/stats/"]
+  end
+
+  subgraph Components
+    site_src_components_ActivityCharts_svelte["components/ActivityCharts.svelte"]
+    site_src_components_ActivityDetail_svelte["components/ActivityDetail.svelte"]
+    site_src_components_ActivityDetailLoader_svelte["components/ActivityDetailLoader.svelte"]
+    site_src_components_ActivityFeed_svelte["components/ActivityFeed.svelte"]
+    site_src_components_ActivityMap_svelte["components/ActivityMap.svelte"]
+    site_src_components_AthleteDrawer_svelte["components/AthleteDrawer.svelte"]
+    site_src_components_AthleteView_svelte["components/AthleteView.svelte"]
+    site_src_components_CommunityView_svelte["components/CommunityView.svelte"]
+    site_src_components_EditDrawer_svelte["components/EditDrawer.svelte"]
+    site_src_components_LocalActivityDetail_svelte["components/LocalActivityDetail.svelte"]
+    site_src_components_MmpChart_svelte["components/MmpChart.svelte"]
+    site_src_components_RecordsView_svelte["components/RecordsView.svelte"]
+    site_src_components_StatsView_svelte["components/StatsView.svelte"]
+  end
+
+  subgraph Python
+    subgraph py_edit["edit"]
+      bincio_edit_cli_py["cli"]
+      bincio_edit_ops_py["ops"]
+      bincio_edit_server_py["server"]
+    end
+    subgraph py_extract["extract"]
+      bincio_extract_cli_py["cli"]
+      bincio_extract_config_py["config"]
+      bincio_extract_dedup_py["dedup"]
+      bincio_extract_garmin_api_py["garmin_api"]
+      bincio_extract_garmin_sync_py["garmin_sync"]
+      bincio_extract_ingest_py["ingest"]
+      bincio_extract_metrics_py["metrics"]
+      bincio_extract_models_py["models"]
+      bincio_extract_parsers_base_py["base"]
+      bincio_extract_parsers_factory_py["factory"]
+      bincio_extract_parsers_fit_py["fit"]
+      bincio_extract_parsers_gpx_py["gpx"]
+      bincio_extract_parsers_tcx_py["tcx"]
+      bincio_extract_simplify_py["simplify"]
+      bincio_extract_sport_py["sport"]
+      bincio_extract_strava_api_py["strava_api"]
+      bincio_extract_strava_csv_py["strava_csv"]
+      bincio_extract_strava_zip_py["strava_zip"]
+      bincio_extract_timeseries_py["timeseries"]
+      bincio_extract_writer_py["writer"]
+    end
+    subgraph py_import_["import_"]
+      bincio_import__cli_py["cli"]
+      bincio_import__strava_py["strava"]
+    end
+    subgraph py_render["render"]
+      bincio_render_cli_py["cli"]
+      bincio_render_merge_py["merge"]
+    end
+    subgraph py_root["root"]
+      bincio_cli_py["cli"]
+      bincio_dev_py["dev"]
+    end
+    subgraph py_serve["serve"]
+      bincio_serve_cli_py["cli"]
+      bincio_serve_db_py["db"]
+      bincio_serve_init_cmd_py["init_cmd"]
+      bincio_serve_server_py["server"]
+    end
+  end
+
+  site_src_components_EditDrawer_svelte -->|fetch| api__api_activity_
+  site_src_components_AthleteDrawer_svelte -->|fetch| api__api_athlete
+  site_src_components_AthleteView_svelte -->|fetch| api__api_athlete
+  site_src_components_AthleteView_svelte -->|fetch| api__api_athlete__
+  site_src_layouts_Base_astro -->|fetch| api__api_me
+  site_src_layouts_Base_astro -->|fetch| api__api_admin_jobs
+  site_src_layouts_Base_astro -->|fetch| api__api_auth_logout
+  site_src_layouts_Base_astro -->|fetch| api__api_admin_jobs__
+  site_src_layouts_Base_astro -->|fetch| api__api_auth_logout__
+  site_src_layouts_Base_astro -->|fetch| api__api_upload
+  site_src_layouts_Base_astro -->|fetch| api__api_strava_status
+  site_src_layouts_Base_astro -->|fetch| api__api_strava_auth_url
+  site_src_layouts_Base_astro -->|fetch| api__api_strava_sync_stream
+  site_src_layouts_Base_astro -->|fetch| api__api_strava_reset
+  site_src_layouts_Base_astro -->|fetch| api__api_upload_strava_zip
+  site_src_layouts_Base_astro -->|fetch| api__api_garmin_status
+  site_src_layouts_Base_astro -->|fetch| api__api_garmin_connect
+  site_src_layouts_Base_astro -->|fetch| api__api_garmin_sync_stream
+  site_src_layouts_Base_astro -->|fetch| api__api_garmin_disconnect
+  site_src_pages_admin_index_astro -->|fetch| api__api_admin_disk
+  site_src_pages_admin_index_astro -->|fetch| api__api_admin_users___h__rebuild
+  site_src_pages_admin_index_astro -->|fetch| api__api_admin_users___h__reset_password_code
+  site_src_pages_admin_index_astro -->|fetch| api__api_admin_users___pendingHandle__activities
+  site_src_pages_admin_index_astro -->|fetch| api__api_admin_disk__
+  site_src_pages_admin_index_astro -->|fetch| api__api_admin_users_
+  site_src_pages_about_index_astro -->|fetch| api__api_me
+  site_src_pages_about_index_astro -->|fetch| api__api_stats
+  site_src_pages_about_index_astro -->|fetch| api__api_stats___
+  site_src_pages_feedback_index_astro -->|fetch| api__api_feedback
+  site_src_pages_feedback_index_astro -->|fetch| api__api_me
+  site_src_pages_feedback_index_astro -->|fetch| api__api_feedback__
+  site_src_pages_feedback_index_astro -->|fetch| api__api_me__
+  site_src_pages_register_index_astro -->|fetch| api__api_register
+  site_src_pages_reset_password_index_astro -->|fetch| api__api_auth_reset_password
+  site_src_pages_invites_index_astro -->|fetch| api__api_invites
+  site_src_pages_invites_index_astro -->|fetch| api__api_invites__
+  site_src_pages_login_index_astro -->|fetch| api__api_auth_login
+  site_src_pages_convert_index_astro -->|fetch| api__api_import_bas
+  site_src_pages_about_it_index_astro -->|fetch| api__api_me
+  site_src_pages_about_it_index_astro -->|fetch| api__api_stats
+  site_src_pages_about_it_index_astro -->|fetch| api__api_stats___
+  site_src_pages_about_ca_index_astro -->|fetch| api__api_me
+  site_src_pages_about_ca_index_astro -->|fetch| api__api_stats
+  site_src_pages_about_ca_index_astro -->|fetch| api__api_stats___
+  site_src_pages_about_es_index_astro -->|fetch| api__api_me
+  site_src_pages_about_es_index_astro -->|fetch| api__api_stats
+  site_src_pages_about_es_index_astro -->|fetch| api__api_stats___
+  site_src_components_ActivityDetail_svelte --> site_src_components_ActivityMap_svelte
+  site_src_components_ActivityDetail_svelte --> site_src_components_ActivityCharts_svelte
+  site_src_components_ActivityDetail_svelte --> site_src_components_EditDrawer_svelte
+  site_src_components_ActivityDetailLoader_svelte --> site_src_components_ActivityDetail_svelte
+  site_src_components_AthleteView_svelte --> site_src_components_MmpChart_svelte
+  site_src_components_AthleteView_svelte --> site_src_components_RecordsView_svelte
+  site_src_components_AthleteView_svelte --> site_src_components_AthleteDrawer_svelte
+  site_src_components_LocalActivityDetail_svelte --> site_src_components_ActivityDetail_svelte
+  site_src_pages_index_astro --> site_src_components_ActivityFeed_svelte
+  site_src_pages_index_astro --> site_src_layouts_Base_astro
+  site_src_pages_record_index_astro --> site_src_layouts_Base_astro
+  site_src_pages_activity__id__astro --> site_src_components_ActivityDetail_svelte
+  site_src_pages_activity__id__astro --> site_src_layouts_Base_astro
+  site_src_pages_activity_index_astro --> site_src_components_ActivityDetailLoader_svelte
+  site_src_pages_activity_index_astro --> site_src_layouts_Base_astro
+  site_src_pages_admin_index_astro --> site_src_layouts_Base_astro
+  site_src_pages_about_index_astro --> site_src_layouts_Base_astro
+  site_src_pages_feedback_index_astro --> site_src_layouts_Base_astro
+  site_src_pages_register_index_astro --> site_src_layouts_Base_astro
+  site_src_pages_reset_password_index_astro --> site_src_layouts_Base_astro
+  site_src_pages_community_index_astro --> site_src_components_CommunityView_svelte
+  site_src_pages_community_index_astro --> site_src_layouts_Base_astro
+  site_src_pages_invites_index_astro --> site_src_layouts_Base_astro
+  site_src_pages_login_index_astro --> site_src_layouts_Base_astro
+  site_src_pages_convert_index_astro --> site_src_layouts_Base_astro
+  site_src_pages_activity_local_index_astro --> site_src_components_LocalActivityDetail_svelte
+  site_src_pages_activity_local_index_astro --> site_src_layouts_Base_astro
+  site_src_pages_u__handle__index_astro --> site_src_components_ActivityFeed_svelte
+  site_src_pages_u__handle__index_astro --> site_src_layouts_Base_astro
+  site_src_pages_u__handle__athlete_index_astro --> site_src_components_AthleteView_svelte
+  site_src_pages_u__handle__athlete_index_astro --> site_src_layouts_Base_astro
+  site_src_pages_u__handle__stats_index_astro --> site_src_components_StatsView_svelte
+  site_src_pages_u__handle__stats_index_astro --> site_src_layouts_Base_astro
+  site_src_pages_about_it_index_astro --> site_src_layouts_Base_astro
+  site_src_pages_about_ca_index_astro --> site_src_layouts_Base_astro
+  site_src_pages_about_es_index_astro --> site_src_layouts_Base_astro
+  bincio_cli_py --> bincio_edit_cli_py
+  bincio_cli_py --> bincio_extract_cli_py
+  bincio_cli_py --> bincio_render_cli_py
+  bincio_cli_py --> bincio_serve_cli_py
+  bincio_cli_py --> bincio_import__cli_py
+  bincio_cli_py --> bincio_serve_init_cmd_py
+  bincio_cli_py --> bincio_dev_py
+  bincio_import__strava_py --> bincio_extract_models_py
+  bincio_import__strava_py --> bincio_extract_sport_py
+  bincio_edit_server_py --> bincio_edit_ops_py
+  bincio_extract_simplify_py --> bincio_extract_models_py
+  bincio_extract_metrics_py --> bincio_extract_models_py
+  bincio_extract_ingest_py --> bincio_extract_models_py
+  bincio_extract_strava_api_py --> bincio_extract_models_py
+  bincio_extract_strava_api_py --> bincio_extract_sport_py
+  bincio_extract_cli_py --> bincio_extract_parsers_factory_py
+  bincio_extract_cli_py --> bincio_extract_config_py
+  bincio_extract_cli_py --> bincio_extract_dedup_py
+  bincio_extract_writer_py --> bincio_extract_metrics_py
+  bincio_extract_writer_py --> bincio_extract_simplify_py
+  bincio_extract_writer_py --> bincio_extract_timeseries_py
+  bincio_extract_writer_py --> bincio_extract_models_py
+  bincio_extract_timeseries_py --> bincio_extract_models_py
+  bincio_serve_server_py --> bincio_serve_db_py
+  bincio_serve_server_py --> bincio_edit_ops_py
+  bincio_extract_parsers_tcx_py --> bincio_extract_models_py
+  bincio_extract_parsers_tcx_py --> bincio_extract_sport_py
+  bincio_extract_parsers_fit_py --> bincio_extract_models_py
+  bincio_extract_parsers_fit_py --> bincio_extract_sport_py
+  bincio_extract_parsers_gpx_py --> bincio_extract_sport_py
+  bincio_extract_parsers_gpx_py --> bincio_extract_models_py
+  bincio_extract_parsers_gpx_py --> bincio_extract_parsers_base_py
+  bincio_extract_parsers_factory_py --> bincio_extract_parsers_gpx_py
+  bincio_extract_parsers_factory_py --> bincio_extract_models_py
+  bincio_extract_parsers_factory_py --> bincio_extract_parsers_tcx_py
+  bincio_extract_parsers_factory_py --> bincio_extract_parsers_base_py
+  bincio_extract_parsers_factory_py --> bincio_extract_parsers_fit_py
+  bincio_extract_parsers_base_py --> bincio_extract_models_py

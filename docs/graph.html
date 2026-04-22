@@ -1,0 +1,1370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Bincio — architecture graph</title>
+<script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0f172a; color: #e2e8f0; font-family: system-ui, sans-serif; overflow: hidden; }
+  #toolbar { position: fixed; top: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: #1e293b; border-bottom: 1px solid #334155; flex-wrap: wrap; }
+  #toolbar h1 { font-size: 14px; font-weight: 600; color: #94a3b8; margin-right: 8px; }
+  .filter-group { display: flex; gap: 6px; flex-wrap: wrap; }
+  .filter-group label { display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; padding: 3px 8px; border-radius: 4px; border: 1px solid #334155; }
+  .filter-group label:hover { background: #334155; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  #search { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 4px 10px; border-radius: 6px; font-size: 12px; width: 180px; }
+  #search::placeholder { color: #475569; }
+  #info { margin-left: auto; font-size: 11px; color: #64748b; white-space: nowrap; }
+  #graph { position: fixed; left: 0; right: 0; bottom: 0; }
+  #tooltip { position: fixed; background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #e2e8f0; pointer-events: none; display: none; max-width: 320px; z-index: 100; }
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <h1>Bincio architecture</h1>
+  <div class="filter-group">
+    <label><input type="checkbox" data-group="api" checked> <span class="dot" style="background:#f59e0b"></span> API endpoints</label>
+    <label><input type="checkbox" data-group="page" checked> <span class="dot" style="background:#3b82f6"></span> Pages</label>
+    <label><input type="checkbox" data-group="component" checked> <span class="dot" style="background:#8b5cf6"></span> Components</label>
+    <label><input type="checkbox" data-group="layout" checked> <span class="dot" style="background:#06b6d4"></span> Layouts</label>
+    <label><input type="checkbox" data-group="py_extract" checked> <span class="dot" style="background:#22c55e"></span> extract</label>
+    <label><input type="checkbox" data-group="py_render" checked> <span class="dot" style="background:#84cc16"></span> render</label>
+    <label><input type="checkbox" data-group="py_serve" checked> <span class="dot" style="background:#ef4444"></span> serve</label>
+    <label><input type="checkbox" data-group="py_edit" checked> <span class="dot" style="background:#f97316"></span> edit</label>
+  </div>
+  <input id="search" type="text" placeholder="Search nodes…" />
+  <span id="info"></span>
+</div>
+<div id="graph"></div>
+<div id="tooltip"></div>
+
+<script>
+const allNodes = [
+  {
+    "id": 0,
+    "label": "GET\n/api/me",
+    "group": "api",
+    "title": "GET /api/me  \u2192  me()"
+  },
+  {
+    "id": 1,
+    "label": "GET\n/api/stats",
+    "group": "api",
+    "title": "GET /api/stats  \u2192  stats()"
+  },
+  {
+    "id": 2,
+    "label": "POST\n/api/auth/login",
+    "group": "api",
+    "title": "POST /api/auth/login  \u2192  login()"
+  },
+  {
+    "id": 3,
+    "label": "POST\n/api/auth/logout",
+    "group": "api",
+    "title": "POST /api/auth/logout  \u2192  logout()"
+  },
+  {
+    "id": 4,
+    "label": "POST\n/api/auth/reset-password",
+    "group": "api",
+    "title": "POST /api/auth/reset-password  \u2192  reset_password()"
+  },
+  {
+    "id": 5,
+    "label": "POST\n/api/register",
+    "group": "api",
+    "title": "POST /api/register  \u2192  register()"
+  },
+  {
+    "id": 6,
+    "label": "GET\n/api/invites",
+    "group": "api",
+    "title": "GET /api/invites  \u2192  get_invites()"
+  },
+  {
+    "id": 7,
+    "label": "GET\n/api/admin/users",
+    "group": "api",
+    "title": "GET /api/admin/users  \u2192  admin_users()"
+  },
+  {
+    "id": 8,
+    "label": "GET\n/api/admin/jobs",
+    "group": "api",
+    "title": "GET /api/admin/jobs  \u2192  admin_jobs()"
+  },
+  {
+    "id": 9,
+    "label": "GET\n/api/admin/disk",
+    "group": "api",
+    "title": "GET /api/admin/disk  \u2192  admin_disk()"
+  },
+  {
+    "id": 10,
+    "label": "POST\n/api/admin/users/{handle}/reset-password-code",
+    "group": "api",
+    "title": "POST /api/admin/users/{handle}/reset-password-code  \u2192  admin_reset_password_code()"
+  },
+  {
+    "id": 11,
+    "label": "POST\n/api/admin/users/{handle}/rebuild",
+    "group": "api",
+    "title": "POST /api/admin/users/{handle}/rebuild  \u2192  admin_rebuild()"
+  },
+  {
+    "id": 12,
+    "label": "DELETE\n/api/admin/users/{handle}/activities",
+    "group": "api",
+    "title": "DELETE /api/admin/users/{handle}/activities  \u2192  admin_delete_activities()"
+  },
+  {
+    "id": 13,
+    "label": "GET\n/api/activity/{activity_id}",
+    "group": "api",
+    "title": "GET /api/activity/{activity_id}  \u2192  get_activity()"
+  },
+  {
+    "id": 14,
+    "label": "GET\n/api/activity/{activity_id}/images",
+    "group": "api",
+    "title": "GET /api/activity/{activity_id}/images  \u2192  list_images()"
+  },
+  {
+    "id": 15,
+    "label": "DELETE\n/api/activity/{activity_id}/images/{filename}",
+    "group": "api",
+    "title": "DELETE /api/activity/{activity_id}/images/{filename}  \u2192  delete_image()"
+  },
+  {
+    "id": 16,
+    "label": "GET\n/api/athlete",
+    "group": "api",
+    "title": "GET /api/athlete  \u2192  get_athlete()"
+  },
+  {
+    "id": 17,
+    "label": "POST\n/api/upload",
+    "group": "api",
+    "title": "POST /api/upload  \u2192  upload_activity()"
+  },
+  {
+    "id": 18,
+    "label": "POST\n/api/upload/strava-zip",
+    "group": "api",
+    "title": "POST /api/upload/strava-zip  \u2192  upload_strava_zip()"
+  },
+  {
+    "id": 19,
+    "label": "POST\n/api/feedback",
+    "group": "api",
+    "title": "POST /api/feedback  \u2192  submit_feedback()"
+  },
+  {
+    "id": 20,
+    "label": "GET\n/api/strava/status",
+    "group": "api",
+    "title": "GET /api/strava/status  \u2192  strava_status()"
+  },
+  {
+    "id": 21,
+    "label": "POST\n/api/strava/reset",
+    "group": "api",
+    "title": "POST /api/strava/reset  \u2192  strava_reset()"
+  },
+  {
+    "id": 22,
+    "label": "GET\n/api/strava/auth-url",
+    "group": "api",
+    "title": "GET /api/strava/auth-url  \u2192  strava_auth_url()"
+  },
+  {
+    "id": 23,
+    "label": "GET\n/api/strava/callback",
+    "group": "api",
+    "title": "GET /api/strava/callback  \u2192  strava_callback()"
+  },
+  {
+    "id": 24,
+    "label": "GET\n/api/strava/sync/stream",
+    "group": "api",
+    "title": "GET /api/strava/sync/stream  \u2192  serve_strava_sync_stream()"
+  },
+  {
+    "id": 25,
+    "label": "POST\n/api/strava/sync",
+    "group": "api",
+    "title": "POST /api/strava/sync  \u2192  serve_strava_sync()"
+  },
+  {
+    "id": 26,
+    "label": "GET\n/api/garmin/status",
+    "group": "api",
+    "title": "GET /api/garmin/status  \u2192  garmin_status()"
+  },
+  {
+    "id": 27,
+    "label": "POST\n/api/garmin/connect",
+    "group": "api",
+    "title": "POST /api/garmin/connect  \u2192  garmin_connect()"
+  },
+  {
+    "id": 28,
+    "label": "POST\n/api/garmin/disconnect",
+    "group": "api",
+    "title": "POST /api/garmin/disconnect  \u2192  garmin_disconnect()"
+  },
+  {
+    "id": 29,
+    "label": "GET\n/api/garmin/sync/stream",
+    "group": "api",
+    "title": "GET /api/garmin/sync/stream  \u2192  garmin_sync_stream()"
+  },
+  {
+    "id": 30,
+    "label": "EditDrawer.svelte",
+    "group": "component",
+    "title": "components/EditDrawer.svelte"
+  },
+  {
+    "id": 31,
+    "label": "CommunityView.svelte",
+    "group": "component",
+    "title": "components/CommunityView.svelte"
+  },
+  {
+    "id": 32,
+    "label": "ActivityFeed.svelte",
+    "group": "component",
+    "title": "components/ActivityFeed.svelte"
+  },
+  {
+    "id": 33,
+    "label": "MmpChart.svelte",
+    "group": "component",
+    "title": "components/MmpChart.svelte"
+  },
+  {
+    "id": 34,
+    "label": "ActivityDetail.svelte",
+    "group": "component",
+    "title": "components/ActivityDetail.svelte"
+  },
+  {
+    "id": 35,
+    "label": "ActivityDetailLoader.svelte",
+    "group": "component",
+    "title": "components/ActivityDetailLoader.svelte"
+  },
+  {
+    "id": 36,
+    "label": "StatsView.svelte",
+    "group": "component",
+    "title": "components/StatsView.svelte"
+  },
+  {
+    "id": 37,
+    "label": "RecordsView.svelte",
+    "group": "component",
+    "title": "components/RecordsView.svelte"
+  },
+  {
+    "id": 38,
+    "label": "AthleteDrawer.svelte",
+    "group": "component",
+    "title": "components/AthleteDrawer.svelte"
+  },
+  {
+    "id": 39,
+    "label": "ActivityCharts.svelte",
+    "group": "component",
+    "title": "components/ActivityCharts.svelte"
+  },
+  {
+    "id": 40,
+    "label": "AthleteView.svelte",
+    "group": "component",
+    "title": "components/AthleteView.svelte"
+  },
+  {
+    "id": 41,
+    "label": "ActivityMap.svelte",
+    "group": "component",
+    "title": "components/ActivityMap.svelte"
+  },
+  {
+    "id": 42,
+    "label": "LocalActivityDetail.svelte",
+    "group": "component",
+    "title": "components/LocalActivityDetail.svelte"
+  },
+  {
+    "id": 43,
+    "label": "Base.astro",
+    "group": "layout",
+    "title": "layouts/Base.astro"
+  },
+  {
+    "id": 44,
+    "label": "pages/",
+    "group": "page",
+    "title": "pages/"
+  },
+  {
+    "id": 45,
+    "label": "record/",
+    "group": "page",
+    "title": "pages/record/"
+  },
+  {
+    "id": 46,
+    "label": "[id].astro",
+    "group": "page",
+    "title": "pages/activity/[id].astro"
+  },
+  {
+    "id": 47,
+    "label": "activity/",
+    "group": "page",
+    "title": "pages/activity/"
+  },
+  {
+    "id": 48,
+    "label": "admin/",
+    "group": "page",
+    "title": "pages/admin/"
+  },
+  {
+    "id": 49,
+    "label": "about/",
+    "group": "page",
+    "title": "pages/about/"
+  },
+  {
+    "id": 50,
+    "label": "feedback/",
+    "group": "page",
+    "title": "pages/feedback/"
+  },
+  {
+    "id": 51,
+    "label": "register/",
+    "group": "page",
+    "title": "pages/register/"
+  },
+  {
+    "id": 52,
+    "label": "reset-password/",
+    "group": "page",
+    "title": "pages/reset-password/"
+  },
+  {
+    "id": 53,
+    "label": "community/",
+    "group": "page",
+    "title": "pages/community/"
+  },
+  {
+    "id": 54,
+    "label": "athlete/",
+    "group": "page",
+    "title": "pages/athlete/"
+  },
+  {
+    "id": 55,
+    "label": "invites/",
+    "group": "page",
+    "title": "pages/invites/"
+  },
+  {
+    "id": 56,
+    "label": "login/",
+    "group": "page",
+    "title": "pages/login/"
+  },
+  {
+    "id": 57,
+    "label": "stats/",
+    "group": "page",
+    "title": "pages/stats/"
+  },
+  {
+    "id": 58,
+    "label": "convert/",
+    "group": "page",
+    "title": "pages/convert/"
+  },
+  {
+    "id": 59,
+    "label": "local/",
+    "group": "page",
+    "title": "pages/activity/local/"
+  },
+  {
+    "id": 60,
+    "label": "[handle]/",
+    "group": "page",
+    "title": "pages/u/[handle]/"
+  },
+  {
+    "id": 61,
+    "label": "athlete/",
+    "group": "page",
+    "title": "pages/u/[handle]/athlete/"
+  },
+  {
+    "id": 62,
+    "label": "stats/",
+    "group": "page",
+    "title": "pages/u/[handle]/stats/"
+  },
+  {
+    "id": 63,
+    "label": "it/",
+    "group": "page",
+    "title": "pages/about/it/"
+  },
+  {
+    "id": 64,
+    "label": "ca/",
+    "group": "page",
+    "title": "pages/about/ca/"
+  },
+  {
+    "id": 65,
+    "label": "es/",
+    "group": "page",
+    "title": "pages/about/es/"
+  },
+  {
+    "id": 66,
+    "label": "cli",
+    "group": "py_root",
+    "title": "bincio/cli.py"
+  },
+  {
+    "id": 67,
+    "label": "dev",
+    "group": "py_root",
+    "title": "bincio/dev.py"
+  },
+  {
+    "id": 68,
+    "label": "merge",
+    "group": "py_render",
+    "title": "bincio/render/merge.py"
+  },
+  {
+    "id": 69,
+    "label": "cli",
+    "group": "py_render",
+    "title": "bincio/render/cli.py"
+  },
+  {
+    "id": 70,
+    "label": "strava",
+    "group": "py_import_",
+    "title": "bincio/import_/strava.py"
+  },
+  {
+    "id": 71,
+    "label": "cli",
+    "group": "py_import_",
+    "title": "bincio/import_/cli.py"
+  },
+  {
+    "id": 72,
+    "label": "server",
+    "group": "py_edit",
+    "title": "bincio/edit/server.py"
+  },
+  {
+    "id": 73,
+    "label": "ops",
+    "group": "py_edit",
+    "title": "bincio/edit/ops.py"
+  },
+  {
+    "id": 74,
+    "label": "cli",
+    "group": "py_edit",
+    "title": "bincio/edit/cli.py"
+  },
+  {
+    "id": 75,
+    "label": "strava_csv",
+    "group": "py_extract",
+    "title": "bincio/extract/strava_csv.py"
+  },
+  {
+    "id": 76,
+    "label": "simplify",
+    "group": "py_extract",
+    "title": "bincio/extract/simplify.py"
+  },
+  {
+    "id": 77,
+    "label": "metrics",
+    "group": "py_extract",
+    "title": "bincio/extract/metrics.py"
+  },
+  {
+    "id": 78,
+    "label": "ingest",
+    "group": "py_extract",
+    "title": "bincio/extract/ingest.py"
+  },
+  {
+    "id": 79,
+    "label": "strava_zip",
+    "group": "py_extract",
+    "title": "bincio/extract/strava_zip.py"
+  },
+  {
+    "id": 80,
+    "label": "strava_api",
+    "group": "py_extract",
+    "title": "bincio/extract/strava_api.py"
+  },
+  {
+    "id": 81,
+    "label": "config",
+    "group": "py_extract",
+    "title": "bincio/extract/config.py"
+  },
+  {
+    "id": 82,
+    "label": "models",
+    "group": "py_extract",
+    "title": "bincio/extract/models.py"
+  },
+  {
+    "id": 83,
+    "label": "cli",
+    "group": "py_extract",
+    "title": "bincio/extract/cli.py"
+  },
+  {
+    "id": 84,
+    "label": "dedup",
+    "group": "py_extract",
+    "title": "bincio/extract/dedup.py"
+  },
+  {
+    "id": 85,
+    "label": "sport",
+    "group": "py_extract",
+    "title": "bincio/extract/sport.py"
+  },
+  {
+    "id": 86,
+    "label": "garmin_api",
+    "group": "py_extract",
+    "title": "bincio/extract/garmin_api.py"
+  },
+  {
+    "id": 87,
+    "label": "writer",
+    "group": "py_extract",
+    "title": "bincio/extract/writer.py"
+  },
+  {
+    "id": 88,
+    "label": "garmin_sync",
+    "group": "py_extract",
+    "title": "bincio/extract/garmin_sync.py"
+  },
+  {
+    "id": 89,
+    "label": "timeseries",
+    "group": "py_extract",
+    "title": "bincio/extract/timeseries.py"
+  },
+  {
+    "id": 90,
+    "label": "db",
+    "group": "py_serve",
+    "title": "bincio/serve/db.py"
+  },
+  {
+    "id": 91,
+    "label": "server",
+    "group": "py_serve",
+    "title": "bincio/serve/server.py"
+  },
+  {
+    "id": 92,
+    "label": "init_cmd",
+    "group": "py_serve",
+    "title": "bincio/serve/init_cmd.py"
+  },
+  {
+    "id": 93,
+    "label": "cli",
+    "group": "py_serve",
+    "title": "bincio/serve/cli.py"
+  },
+  {
+    "id": 94,
+    "label": "tcx",
+    "group": "py_extract",
+    "title": "bincio/extract/parsers/tcx.py"
+  },
+  {
+    "id": 95,
+    "label": "fit",
+    "group": "py_extract",
+    "title": "bincio/extract/parsers/fit.py"
+  },
+  {
+    "id": 96,
+    "label": "gpx",
+    "group": "py_extract",
+    "title": "bincio/extract/parsers/gpx.py"
+  },
+  {
+    "id": 97,
+    "label": "factory",
+    "group": "py_extract",
+    "title": "bincio/extract/parsers/factory.py"
+  },
+  {
+    "id": 98,
+    "label": "base",
+    "group": "py_extract",
+    "title": "bincio/extract/parsers/base.py"
+  }
+];
+const allEdges = [
+  {
+    "from": 38,
+    "to": 16,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 40,
+    "to": 16,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 43,
+    "to": 0,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 43,
+    "to": 8,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 43,
+    "to": 3,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 43,
+    "to": 17,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 43,
+    "to": 20,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 43,
+    "to": 22,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 43,
+    "to": 24,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 43,
+    "to": 21,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 43,
+    "to": 18,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 43,
+    "to": 26,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 43,
+    "to": 27,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 43,
+    "to": 29,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 43,
+    "to": 28,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 48,
+    "to": 9,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 49,
+    "to": 0,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 49,
+    "to": 1,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 50,
+    "to": 19,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 50,
+    "to": 0,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 51,
+    "to": 5,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 52,
+    "to": 4,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 55,
+    "to": 6,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 56,
+    "to": 2,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 63,
+    "to": 0,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 63,
+    "to": 1,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 64,
+    "to": 0,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 64,
+    "to": 1,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 65,
+    "to": 0,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 65,
+    "to": 1,
+    "arrows": "to",
+    "label": "fetch"
+  },
+  {
+    "from": 34,
+    "to": 41,
+    "arrows": "to"
+  },
+  {
+    "from": 34,
+    "to": 39,
+    "arrows": "to"
+  },
+  {
+    "from": 34,
+    "to": 30,
+    "arrows": "to"
+  },
+  {
+    "from": 35,
+    "to": 34,
+    "arrows": "to"
+  },
+  {
+    "from": 40,
+    "to": 33,
+    "arrows": "to"
+  },
+  {
+    "from": 40,
+    "to": 37,
+    "arrows": "to"
+  },
+  {
+    "from": 40,
+    "to": 38,
+    "arrows": "to"
+  },
+  {
+    "from": 42,
+    "to": 34,
+    "arrows": "to"
+  },
+  {
+    "from": 44,
+    "to": 32,
+    "arrows": "to"
+  },
+  {
+    "from": 44,
+    "to": 43,
+    "arrows": "to"
+  },
+  {
+    "from": 45,
+    "to": 43,
+    "arrows": "to"
+  },
+  {
+    "from": 46,
+    "to": 34,
+    "arrows": "to"
+  },
+  {
+    "from": 46,
+    "to": 43,
+    "arrows": "to"
+  },
+  {
+    "from": 47,
+    "to": 35,
+    "arrows": "to"
+  },
+  {
+    "from": 47,
+    "to": 43,
+    "arrows": "to"
+  },
+  {
+    "from": 48,
+    "to": 43,
+    "arrows": "to"
+  },
+  {
+    "from": 49,
+    "to": 43,
+    "arrows": "to"
+  },
+  {
+    "from": 50,
+    "to": 43,
+    "arrows": "to"
+  },
+  {
+    "from": 51,
+    "to": 43,
+    "arrows": "to"
+  },
+  {
+    "from": 52,
+    "to": 43,
+    "arrows": "to"
+  },
+  {
+    "from": 53,
+    "to": 31,
+    "arrows": "to"
+  },
+  {
+    "from": 53,
+    "to": 43,
+    "arrows": "to"
+  },
+  {
+    "from": 55,
+    "to": 43,
+    "arrows": "to"
+  },
+  {
+    "from": 56,
+    "to": 43,
+    "arrows": "to"
+  },
+  {
+    "from": 58,
+    "to": 43,
+    "arrows": "to"
+  },
+  {
+    "from": 59,
+    "to": 42,
+    "arrows": "to"
+  },
+  {
+    "from": 59,
+    "to": 43,
+    "arrows": "to"
+  },
+  {
+    "from": 60,
+    "to": 32,
+    "arrows": "to"
+  },
+  {
+    "from": 60,
+    "to": 43,
+    "arrows": "to"
+  },
+  {
+    "from": 61,
+    "to": 40,
+    "arrows": "to"
+  },
+  {
+    "from": 61,
+    "to": 43,
+    "arrows": "to"
+  },
+  {
+    "from": 62,
+    "to": 36,
+    "arrows": "to"
+  },
+  {
+    "from": 62,
+    "to": 43,
+    "arrows": "to"
+  },
+  {
+    "from": 63,
+    "to": 43,
+    "arrows": "to"
+  },
+  {
+    "from": 64,
+    "to": 43,
+    "arrows": "to"
+  },
+  {
+    "from": 65,
+    "to": 43,
+    "arrows": "to"
+  },
+  {
+    "from": 66,
+    "to": 74,
+    "arrows": "to"
+  },
+  {
+    "from": 66,
+    "to": 83,
+    "arrows": "to"
+  },
+  {
+    "from": 66,
+    "to": 69,
+    "arrows": "to"
+  },
+  {
+    "from": 66,
+    "to": 93,
+    "arrows": "to"
+  },
+  {
+    "from": 66,
+    "to": 71,
+    "arrows": "to"
+  },
+  {
+    "from": 66,
+    "to": 92,
+    "arrows": "to"
+  },
+  {
+    "from": 66,
+    "to": 67,
+    "arrows": "to"
+  },
+  {
+    "from": 70,
+    "to": 82,
+    "arrows": "to"
+  },
+  {
+    "from": 70,
+    "to": 85,
+    "arrows": "to"
+  },
+  {
+    "from": 72,
+    "to": 73,
+    "arrows": "to"
+  },
+  {
+    "from": 76,
+    "to": 82,
+    "arrows": "to"
+  },
+  {
+    "from": 77,
+    "to": 82,
+    "arrows": "to"
+  },
+  {
+    "from": 78,
+    "to": 82,
+    "arrows": "to"
+  },
+  {
+    "from": 80,
+    "to": 82,
+    "arrows": "to"
+  },
+  {
+    "from": 80,
+    "to": 85,
+    "arrows": "to"
+  },
+  {
+    "from": 83,
+    "to": 97,
+    "arrows": "to"
+  },
+  {
+    "from": 83,
+    "to": 81,
+    "arrows": "to"
+  },
+  {
+    "from": 83,
+    "to": 84,
+    "arrows": "to"
+  },
+  {
+    "from": 87,
+    "to": 77,
+    "arrows": "to"
+  },
+  {
+    "from": 87,
+    "to": 76,
+    "arrows": "to"
+  },
+  {
+    "from": 87,
+    "to": 89,
+    "arrows": "to"
+  },
+  {
+    "from": 87,
+    "to": 82,
+    "arrows": "to"
+  },
+  {
+    "from": 89,
+    "to": 82,
+    "arrows": "to"
+  },
+  {
+    "from": 91,
+    "to": 90,
+    "arrows": "to"
+  },
+  {
+    "from": 91,
+    "to": 73,
+    "arrows": "to"
+  },
+  {
+    "from": 94,
+    "to": 82,
+    "arrows": "to"
+  },
+  {
+    "from": 94,
+    "to": 85,
+    "arrows": "to"
+  },
+  {
+    "from": 95,
+    "to": 82,
+    "arrows": "to"
+  },
+  {
+    "from": 95,
+    "to": 85,
+    "arrows": "to"
+  },
+  {
+    "from": 96,
+    "to": 85,
+    "arrows": "to"
+  },
+  {
+    "from": 96,
+    "to": 82,
+    "arrows": "to"
+  },
+  {
+    "from": 96,
+    "to": 98,
+    "arrows": "to"
+  },
+  {
+    "from": 97,
+    "to": 96,
+    "arrows": "to"
+  },
+  {
+    "from": 97,
+    "to": 82,
+    "arrows": "to"
+  },
+  {
+    "from": 97,
+    "to": 94,
+    "arrows": "to"
+  },
+  {
+    "from": 97,
+    "to": 98,
+    "arrows": "to"
+  },
+  {
+    "from": 97,
+    "to": 95,
+    "arrows": "to"
+  },
+  {
+    "from": 98,
+    "to": 82,
+    "arrows": "to"
+  }
+];
+const groups   = {
+  "api": {
+    "color": {
+      "background": "#f59e0b",
+      "border": "#d97706"
+    },
+    "font": {
+      "color": "#000"
+    }
+  },
+  "page": {
+    "color": {
+      "background": "#3b82f6",
+      "border": "#2563eb"
+    },
+    "font": {
+      "color": "#fff"
+    }
+  },
+  "component": {
+    "color": {
+      "background": "#8b5cf6",
+      "border": "#7c3aed"
+    },
+    "font": {
+      "color": "#fff"
+    }
+  },
+  "layout": {
+    "color": {
+      "background": "#06b6d4",
+      "border": "#0891b2"
+    },
+    "font": {
+      "color": "#000"
+    }
+  },
+  "py_extract": {
+    "color": {
+      "background": "#22c55e",
+      "border": "#16a34a"
+    },
+    "font": {
+      "color": "#000"
+    }
+  },
+  "py_render": {
+    "color": {
+      "background": "#84cc16",
+      "border": "#65a30d"
+    },
+    "font": {
+      "color": "#000"
+    }
+  },
+  "py_serve": {
+    "color": {
+      "background": "#ef4444",
+      "border": "#dc2626"
+    },
+    "font": {
+      "color": "#fff"
+    }
+  },
+  "py_edit": {
+    "color": {
+      "background": "#f97316",
+      "border": "#ea580c"
+    },
+    "font": {
+      "color": "#fff"
+    }
+  },
+  "py_root": {
+    "color": {
+      "background": "#6b7280",
+      "border": "#4b5563"
+    },
+    "font": {
+      "color": "#fff"
+    }
+  }
+};
+
+// Size the graph container to fill below the toolbar
+function sizeGraph() {
+  const tb = document.getElementById('toolbar');
+  const g  = document.getElementById('graph');
+  const h  = tb.getBoundingClientRect().height;
+  g.style.top    = h + 'px';
+  g.style.height = (window.innerHeight - h) + 'px';
+}
+sizeGraph();
+window.addEventListener('resize', () => { sizeGraph(); if (window._network) window._network.redraw(); });
+
+const nodesDS = new vis.DataSet(allNodes);
+const edgesDS = new vis.DataSet(allEdges);
+
+const container = document.getElementById('graph');
+const options = {
+  nodes: {
+    shape: 'box',
+    borderWidth: 1,
+    font: { size: 11, face: 'monospace' },
+    margin: 6,
+  },
+  edges: {
+    smooth: { type: 'continuous' },
+    color: { color: '#334155', highlight: '#60a5fa' },
+    font: { size: 10, color: '#64748b', align: 'middle' },
+    width: 1,
+    selectionWidth: 2,
+  },
+  groups,
+  physics: {
+    solver: 'forceAtlas2Based',
+    forceAtlas2Based: { gravitationalConstant: -40, springLength: 120 },
+    stabilization: { iterations: 200 },
+  },
+  interaction: {
+    hover: true,
+    tooltipDelay: 100,
+    navigationButtons: true,
+    keyboard: true,
+  },
+};
+
+const network = new vis.Network(container, { nodes: nodesDS, edges: edgesDS }, options);
+window._network = network;
+
+// Info count
+document.getElementById('info').textContent =
+  `${allNodes.length} nodes · ${allEdges.length} edges`;
+
+// Tooltip on hover
+const tooltip = document.getElementById('tooltip');
+network.on('hoverNode', params => {
+  const node = nodesDS.get(params.node);
+  tooltip.textContent = node.title || node.label;
+  tooltip.style.display = 'block';
+});
+network.on('blurNode', () => { tooltip.style.display = 'none'; });
+document.addEventListener('mousemove', e => {
+  tooltip.style.left = (e.clientX + 14) + 'px';
+  tooltip.style.top  = (e.clientY + 14) + 'px';
+});
+
+// Highlight connected nodes on click
+network.on('click', params => {
+  if (!params.nodes.length) { network.unselectAll(); return; }
+  const nid = params.nodes[0];
+  const connected = network.getConnectedNodes(nid);
+  network.selectNodes([nid, ...connected]);
+});
+
+// Group visibility toggle
+document.querySelectorAll('[data-group]').forEach(cb => {
+  cb.addEventListener('change', () => {
+    const group = cb.dataset.group;
+    const hidden = !cb.checked;
+    const toUpdate = allNodes
+      .filter(n => n.group === group)
+      .map(n => ({ id: n.id, hidden }));
+    nodesDS.update(toUpdate);
+  });
+});
+
+// Search / highlight
+document.getElementById('search').addEventListener('input', e => {
+  const q = e.target.value.trim().toLowerCase();
+  if (!q) { nodesDS.update(allNodes.map(n => ({ id: n.id, opacity: 1 }))); return; }
+  const updates = allNodes.map(n => {
+    const match = (n.label + n.title).toLowerCase().includes(q);
+    return { id: n.id, opacity: match ? 1 : 0.15 };
+  });
+  nodesDS.update(updates);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+---
+import Base from '../../layouts/Base.astro';
+import CommunityView from '../../components/CommunityView.svelte';
+---
+<Base title="Community — BincioActivity">
+  <CommunityView base={import.meta.env.BASE_URL} client:only="svelte" />
+</Base>

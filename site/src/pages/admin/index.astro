@@ -1,0 +1,397 @@
+---
+import Base from '../../layouts/Base.astro';
+---
+<Base title="Admin — BincioActivity">
+  <div class="max-w-3xl mx-auto px-4 py-10">
+    <h1 class="text-2xl font-bold text-white mb-8">Admin</h1>
+
+    <!-- Disk overview -->
+    <div id="disk-overview" class="mb-8 p-4 rounded-lg bg-zinc-900 border border-zinc-800 text-sm">
+      <p class="text-zinc-500">Loading disk info…</p>
+    </div>
+
+    <!-- User table -->
+    <h2 class="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3">Users</h2>
+    <div class="overflow-x-auto rounded-lg border border-zinc-800">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-zinc-500 text-xs border-b border-zinc-800">
+            <th class="px-4 py-2 font-medium">Handle</th>
+            <th class="px-4 py-2 font-medium text-right">Total</th>
+            <th class="px-4 py-2 font-medium text-right">Activities</th>
+            <th class="px-4 py-2 font-medium text-right">Originals</th>
+            <th class="px-4 py-2 font-medium text-right">Merged</th>
+            <th class="px-4 py-2 font-medium text-right">Images</th>
+            <th class="px-4 py-2 font-medium"></th>
+          </tr>
+        </thead>
+        <tbody id="user-list">
+          <tr><td colspan="7" class="px-4 py-6 text-zinc-500 text-center">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Re-extract progress modal -->
+    <dialog id="reextract-dialog" class="rounded-xl bg-zinc-900 border border-zinc-700 p-6 text-white max-w-2xl w-full backdrop:bg-black/60">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-semibold text-sm">Re-extract from Strava originals — <span id="reextract-handle" class="text-zinc-400 font-mono"></span></h3>
+        <button id="reextract-close" class="text-zinc-500 hover:text-zinc-200 text-xs px-2 py-1 rounded bg-zinc-800" disabled>Close</button>
+      </div>
+      <div id="reextract-summary" class="text-xs text-zinc-400 mb-2"></div>
+      <div class="bg-zinc-950 rounded p-3 h-64 overflow-y-auto" id="reextract-log"></div>
+    </dialog>
+
+    <!-- Diag modal -->
+    <dialog id="diag-dialog" class="rounded-xl bg-zinc-900 border border-zinc-700 p-6 text-white max-w-2xl w-full backdrop:bg-black/60">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-semibold text-sm">Data directory snapshot — <span id="diag-handle" class="text-zinc-400 font-mono"></span></h3>
+        <button id="diag-close" class="text-zinc-500 hover:text-zinc-200 text-xs px-2 py-1 rounded bg-zinc-800">Close</button>
+      </div>
+      <pre id="diag-output" class="text-xs font-mono bg-zinc-950 rounded p-4 overflow-auto max-h-96 text-green-300 whitespace-pre-wrap"></pre>
+    </dialog>
+
+    <!-- Confirmation dialog -->
+    <dialog id="confirm-dialog" class="rounded-xl bg-zinc-900 border border-zinc-700 p-6 text-white max-w-sm w-full backdrop:bg-black/60">
+      <p class="text-sm text-zinc-300 mb-1">Reset all data for <strong id="confirm-handle" class="text-white"></strong>?</p>
+      <p class="text-xs text-zinc-500 mb-5">Removes all activities, originals, edits, and images. The account is kept. This cannot be undone.</p>
+      <div class="flex gap-3 justify-end">
+        <button id="confirm-cancel" class="px-4 py-2 rounded-lg text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors">Cancel</button>
+        <button id="confirm-ok" class="px-4 py-2 rounded-lg text-sm bg-red-700 hover:bg-red-600 text-white font-medium transition-colors">Reset</button>
+      </div>
+    </dialog>
+  </div>
+</Base>
+
+<script>
+  const overviewEl  = document.getElementById('disk-overview')!;
+  const tbodyEl     = document.getElementById('user-list')!;
+  const dialog      = document.getElementById('confirm-dialog') as HTMLDialogElement;
+  const confirmH    = document.getElementById('confirm-handle')!;
+  const diagDialog  = document.getElementById('diag-dialog') as HTMLDialogElement;
+  const diagHandle  = document.getElementById('diag-handle')!;
+  const diagOutput  = document.getElementById('diag-output')!;
+  document.getElementById('diag-close')!.addEventListener('click', () => diagDialog.close());
+  diagDialog.addEventListener('click', e => { if (e.target === diagDialog) diagDialog.close(); });
+
+  const reextractDialog  = document.getElementById('reextract-dialog') as HTMLDialogElement;
+  const reextractHandle  = document.getElementById('reextract-handle')!;
+  const reextractSummary = document.getElementById('reextract-summary')!;
+  const reextractLog     = document.getElementById('reextract-log')!;
+  const reextractClose   = document.getElementById('reextract-close') as HTMLButtonElement;
+  reextractClose.addEventListener('click', () => { reextractDialog.close(); load(); });
+  const confirmOk     = document.getElementById('confirm-ok')!;
+  const confirmCancel = document.getElementById('confirm-cancel')!;
+
+  let pendingHandle = '';
+
+  function fmt(mb: number): string {
+    if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB';
+    if (mb >= 1)    return mb.toFixed(0) + ' MB';
+    return (mb * 1024).toFixed(0) + ' KB';
+  }
+
+  function bar(pct: number): string {
+    const color = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-blue-500';
+    return `<div class="w-full bg-zinc-800 rounded-full h-1.5 mt-1"><div class="${color} h-1.5 rounded-full" style="width:${Math.min(pct,100)}%"></div></div>`;
+  }
+
+  async function load() {
+    const r = await fetch('/api/admin/disk', { credentials: 'include' });
+    if (!r.ok) {
+      overviewEl.innerHTML = '<p class="text-red-400">Not authorised or server unavailable.</p>';
+      return;
+    }
+    const { disk, users } = await r.json();
+
+    // Disk overview
+    const pct = disk.percent;
+    const color = pct >= 90 ? 'text-red-400' : pct >= 70 ? 'text-amber-400' : 'text-green-400';
+    overviewEl.innerHTML = `
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-zinc-300 font-medium">Disk usage</span>
+        <span class="${color} font-semibold">${pct}%</span>
+      </div>
+      ${bar(pct)}
+      <p class="text-zinc-500 mt-2">${disk.used_gb} GB used of ${disk.total_gb} GB — ${disk.free_gb} GB free</p>
+    `;
+
+    // User rows
+    const maxMb = Math.max(...users.map((u: any) => u.total_mb), 1);
+
+    tbodyEl.innerHTML = users.map((u: any) => {
+      const rowPct = Math.round(u.total_mb / maxMb * 100);
+      const leaked = u.leaked_zips_count > 0
+        ? `<span class="text-red-400 font-medium ml-2" title="${u.leaked_zips_count} orphaned temp ZIP(s)">⚠ ${fmt(u.leaked_zips_mb)} leaked</span>`
+        : '';
+      const ghostBadge = !u.in_db
+        ? `<span class="text-amber-500 text-xs ml-1" title="No account in database">ghost</span>`
+        : '';
+      const stravaNote = u.originals_strava_mb > 0
+        ? `<span class="text-zinc-600 text-xs ml-1">(${fmt(u.originals_strava_mb)} Strava)</span>`
+        : '';
+      const actionButtons = u.in_db
+        ? `<button
+                class="diag-btn text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
+                data-handle="${u.handle}"
+                title="Show diagnostic snapshot of this user's data directory"
+              >Diag</button>
+              <button
+                class="reextract-btn text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-amber-900 hover:text-amber-300 text-zinc-400 transition-colors"
+                data-handle="${u.handle}"
+                title="Re-extract activities from stored Strava originals (no API call)"
+              >Re-extract</button>
+              <button
+                class="rebuild-btn text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
+                data-handle="${u.handle}"
+                title="Re-run merge_all and trigger a site rebuild"
+              >Rebuild</button>
+              <button
+                class="pwreset-btn text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
+                data-handle="${u.handle}"
+                title="Generate a one-time password reset code for this user"
+              >Reset pwd</button>
+              <button
+                class="delete-btn text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-red-900 hover:text-red-300 text-zinc-400 transition-colors"
+                data-handle="${u.handle}"
+                title="Wipe all activities, originals, edits and images — account is kept"
+              >Reset data</button>`
+        : `<button
+                class="diag-btn text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
+                data-handle="${u.handle}"
+                title="Show diagnostic snapshot of this user's data directory"
+              >Diag</button>
+              <button
+                class="rmdir-btn text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-red-900 hover:text-red-300 text-zinc-400 transition-colors"
+                data-handle="${u.handle}"
+                title="Delete the entire directory for this ghost user (no DB account)"
+              >Delete dir</button>`;
+      return `
+        <tr class="border-b border-zinc-800/50 hover:bg-zinc-900/40" data-handle="${u.handle}">
+          <td class="px-4 py-3">
+            <div class="flex items-center gap-1">
+              <a href="/u/${u.handle}/" class="text-white hover:text-zinc-300">@${u.handle}</a>
+              ${ghostBadge}${leaked}
+            </div>
+            ${bar(rowPct)}
+          </td>
+          <td class="px-4 py-3 text-right text-zinc-300 font-medium tabular-nums">${fmt(u.total_mb)}</td>
+          <td class="px-4 py-3 text-right text-zinc-400 tabular-nums">
+            ${fmt(u.activities_mb)}
+            <span class="text-zinc-600 text-xs block">${u.activities_count} files</span>
+          </td>
+          <td class="px-4 py-3 text-right text-zinc-400 tabular-nums">
+            ${u.originals_mb > 0 ? fmt(u.originals_mb) : '—'}
+            ${stravaNote}
+          </td>
+          <td class="px-4 py-3 text-right text-zinc-400 tabular-nums">${u.merged_mb > 0 ? fmt(u.merged_mb) : '—'}</td>
+          <td class="px-4 py-3 text-right text-zinc-400 tabular-nums">${u.images_mb > 0 ? fmt(u.images_mb) : '—'}</td>
+          <td class="px-4 py-3 text-right">
+            <div class="flex gap-2 justify-end">
+              ${actionButtons}
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    tbodyEl.querySelectorAll<HTMLButtonElement>('.reextract-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const h = btn.dataset.handle!;
+        reextractHandle.textContent = h;
+        reextractLog.innerHTML = '';
+        reextractSummary.textContent = 'Starting…';
+        reextractClose.disabled = true;
+        reextractDialog.showModal();
+
+        let imported = 0, skipped = 0, errors = 0;
+        try {
+          const r = await fetch(`/api/admin/users/${h}/reextract-originals`, {
+            method: 'POST', credentials: 'include',
+          });
+          if (!r.ok) {
+            const errText = await r.text().catch(() => r.status.toString());
+            reextractSummary.textContent = `Error ${r.status}: ${errText}`;
+            reextractClose.disabled = false;
+            return;
+          }
+          const reader = r.body!.getReader();
+          const decoder = new TextDecoder();
+          let buf = '';
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split('\n\n');
+            buf = lines.pop() ?? '';
+            for (const chunk of lines) {
+              const dataLine = chunk.split('\n').find(l => l.startsWith('data: '));
+              if (!dataLine) continue;
+              const ev = JSON.parse(dataLine.slice(6));
+              if (ev.type === 'status') {
+                reextractSummary.textContent = ev.message;
+              } else if (ev.type === 'progress') {
+                const color = ev.status === 'imported' ? 'text-green-400'
+                            : ev.status === 'error'    ? 'text-red-400'
+                            : 'text-zinc-500';
+                const line = document.createElement('div');
+                line.className = `text-xs font-mono ${color}`;
+                line.textContent = `[${ev.n}/${ev.total}] ${ev.status.padEnd(8)} ${ev.name}${ev.detail ? ' — ' + ev.detail : ''}`;
+                reextractLog.appendChild(line);
+                reextractLog.scrollTop = reextractLog.scrollHeight;
+                if (ev.status === 'imported') imported++;
+                else if (ev.status === 'error') errors++;
+                else skipped++;
+                reextractSummary.textContent = `Processing… ${ev.n}/${ev.total} — imported: ${imported}, skipped: ${skipped}, errors: ${errors}`;
+              } else if (ev.type === 'done') {
+                reextractSummary.textContent = `Done — imported: ${ev.imported}, skipped: ${ev.skipped}, errors: ${ev.errors}`;
+              }
+            }
+          }
+        } catch (err) {
+          reextractSummary.textContent = 'Error: ' + String(err);
+        } finally {
+          reextractClose.disabled = false;
+        }
+      });
+    });
+
+    tbodyEl.querySelectorAll<HTMLButtonElement>('.diag-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const h = btn.dataset.handle!;
+        diagHandle.textContent = h;
+        diagOutput.textContent = 'Loading…';
+        diagDialog.showModal();
+        try {
+          const r = await fetch(`/api/admin/users/${h}/diag`, { credentials: 'include' });
+          const d = await r.json();
+          diagOutput.textContent = JSON.stringify(d, null, 2);
+        } catch (err) {
+          diagOutput.textContent = String(err);
+        }
+      });
+    });
+
+    tbodyEl.querySelectorAll<HTMLButtonElement>('.rebuild-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const h = btn.dataset.handle!;
+        btn.disabled = true;
+        btn.textContent = 'Queued…';
+        try {
+          const r = await fetch(`/api/admin/users/${h}/rebuild`, {
+            method: 'POST',
+            credentials: 'include',
+          });
+          if (r.ok) {
+            btn.textContent = 'Rebuilding…';
+            btn.classList.add('text-blue-400');
+            // Rebuild is async — reload sizes after a delay
+            setTimeout(() => load(), 8000);
+          } else {
+            btn.disabled = false;
+            btn.textContent = 'Error';
+            btn.classList.add('text-red-400');
+          }
+        } catch {
+          btn.disabled = false;
+          btn.textContent = 'Error';
+          btn.classList.add('text-red-400');
+        }
+      });
+    });
+
+    tbodyEl.querySelectorAll<HTMLButtonElement>('.pwreset-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const h = btn.dataset.handle!;
+        btn.disabled = true;
+        btn.textContent = '…';
+        try {
+          const r = await fetch(`/api/admin/users/${h}/reset-password-code`, {
+            method: 'POST',
+            credentials: 'include',
+          });
+          const d = await r.json();
+          if (r.ok) {
+            btn.textContent = d.code;
+            btn.title = `Code for ${h} — valid 24 h. Click to copy.`;
+            btn.classList.add('text-yellow-300', 'font-mono');
+            btn.addEventListener('click', () => navigator.clipboard.writeText(d.code), { once: true });
+          } else {
+            btn.textContent = 'Error';
+            btn.classList.add('text-red-400');
+            btn.disabled = false;
+          }
+        } catch {
+          btn.textContent = 'Error';
+          btn.classList.add('text-red-400');
+          btn.disabled = false;
+        }
+      });
+    });
+
+    tbodyEl.querySelectorAll<HTMLButtonElement>('.delete-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        pendingHandle = btn.dataset.handle!;
+        confirmH.textContent = pendingHandle;
+        dialog.showModal();
+      });
+    });
+
+    tbodyEl.querySelectorAll<HTMLButtonElement>('.rmdir-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const h = btn.dataset.handle!;
+        if (!confirm(`Delete entire directory for ghost user "${h}"? This cannot be undone.`)) return;
+        btn.disabled = true;
+        btn.textContent = 'Deleting…';
+        try {
+          const r = await fetch(`/api/admin/users/${h}/directory`, {
+            method: 'DELETE',
+            credentials: 'include',
+          });
+          const d = await r.json();
+          if (r.ok) {
+            btn.textContent = 'Deleted';
+            btn.classList.add('text-green-500');
+            setTimeout(() => load(), 1500);
+          } else {
+            btn.disabled = false;
+            btn.textContent = 'Error: ' + (d.detail ?? 'failed');
+            btn.classList.add('text-red-400');
+          }
+        } catch {
+          btn.disabled = false;
+          btn.textContent = 'Error';
+          btn.classList.add('text-red-400');
+        }
+      });
+    });
+  }
+
+  confirmCancel.addEventListener('click', () => dialog.close());
+  dialog.addEventListener('click', e => { if (e.target === dialog) dialog.close(); });
+
+  confirmOk.addEventListener('click', async () => {
+    dialog.close();
+    const row = tbodyEl.querySelector(`[data-handle="${pendingHandle}"]`);
+    const btn = row?.querySelector<HTMLButtonElement>('.delete-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
+
+    try {
+      const r = await fetch(`/api/admin/users/${pendingHandle}/activities`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const d = await r.json();
+      if (r.ok) {
+        if (btn) { btn.textContent = `Deleted (${d.deleted})`; btn.classList.add('text-green-500'); }
+        // Reload to refresh sizes
+        setTimeout(() => load(), 1500);
+      } else {
+        if (btn) { btn.disabled = false; btn.textContent = 'Error: ' + (d.detail ?? 'failed'); btn.classList.add('text-red-400'); }
+      }
+    } catch {
+      if (btn) { btn.disabled = false; btn.textContent = 'Error'; btn.classList.add('text-red-400'); }
+    }
+  });
+
+  load();
+</script>

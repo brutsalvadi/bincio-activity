@@ -1,0 +1,53 @@
+---
+/**
+ * Per-user athlete page: /u/{handle}/athlete/
+ */
+import Base from '../../../../layouts/Base.astro';
+import AthleteView from '../../../../components/AthleteView.svelte';
+import { readShardHandles } from '../../../../lib/manifest';
+
+export function getStaticPaths() {
+  return readShardHandles().map(({ handle }) => ({
+    params: { handle },
+    props: { handle },
+  }));
+}
+
+const { handle } = Astro.props as { handle: string };
+const base = import.meta.env.BASE_URL;
+const mergedBase = `${base}data/${handle}/_merged/`;
+const indexUrl = `${mergedBase}index.json`;
+const athleteUrl = `${mergedBase}athlete.json`;
+---
+<Base title={`@${handle} Athlete — BincioActivity`}>
+  <div class="pb-2">
+    <div class="flex items-start justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-white mb-0.5">@{handle}</h1>
+        <nav id="profile-subnav" class="flex gap-4 mt-1 mb-6">
+          <a href={`${base}u/${handle}/`} class="text-sm text-zinc-400 hover:text-white transition-colors">Feed</a>
+          <a href={`${base}u/${handle}/stats/`} class="text-sm text-zinc-400 hover:text-white transition-colors">Stats</a>
+          <a href={`${base}u/${handle}/athlete/`} class="text-sm text-[--accent]">Athlete</a>
+        </nav>
+      </div>
+      <a id="invites-btn" href={`${base}invites/`}
+        class="hidden mt-1 px-3 py-1.5 text-xs border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-white rounded-md transition-colors">
+        Invites
+      </a>
+    </div>
+  </div>
+  <AthleteView {base} {indexUrl} {athleteUrl} client:only="svelte" />
+</Base>
+<script define:vars={{ handle }}>
+  function applyMeCheck(me) {
+    if (me === handle) {
+      document.getElementById('profile-subnav')?.remove();
+      document.getElementById('invites-btn')?.classList.remove('hidden');
+    }
+  }
+  if (window.__bincioMe !== undefined) {
+    applyMeCheck(window.__bincioMe);
+  } else {
+    window.addEventListener('bincio:me', e => applyMeCheck(e.detail), { once: true });
+  }
+</script>

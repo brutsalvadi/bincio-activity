@@ -1,0 +1,1105 @@
+---
+import { readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+
+interface Props {
+  title?: string;
+  description?: string;
+  /** Set true on pages that must remain accessible without auth (login, register). */
+  public?: boolean;
+}
+const { title = 'BincioActivity', description = 'Your personal activity stats', public: isPublicPage = false } = Astro.props;
+const editUrl = import.meta.env.PUBLIC_EDIT_URL ?? '';
+// Edit UI is enabled when PUBLIC_EDIT_URL is set (single-user bincio-edit mode)
+// OR when PUBLIC_EDIT_ENABLED=true (multi-user VPS mode — API proxied at /api/).
+const editEnabled = editUrl !== '' || import.meta.env.PUBLIC_EDIT_ENABLED === 'true';
+const mobileApp = import.meta.env.PUBLIC_MOBILE_APP === 'true';
+const baseUrl = import.meta.env.BASE_URL ?? '/';
+
+// Read root index.json at build time to detect instance configuration.
+let instancePrivate = false;
+let singleHandle: string | null = null;   // set when there is exactly one shard
+try {
+  const candidates = [
+    process.env.BINCIO_DATA_DIR,
+    resolve(process.cwd(), 'public', 'data'),
+    resolve(process.cwd(), '..', 'bincio_data'),
+  ].filter(Boolean) as string[];
+  const dataDir = candidates.find(d => { try { readFileSync(join(d, 'index.json')); return true; } catch { return false; } });
+  if (dataDir) {
+    const root = JSON.parse(readFileSync(join(dataDir, 'index.json'), 'utf-8'));
+    instancePrivate = root?.instance?.private === true;
+    const shards: Array<{ handle?: string }> = root?.shards ?? [];
+    const handles = shards.map(s => s.handle).filter(Boolean);
+    if (handles.length === 1 && !instancePrivate) singleHandle = handles[0] as string;
+  }
+} catch { /* non-fatal */ }
+---
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content={description} />
+  <title>{title}</title>
+
+  <!-- Set theme before first paint to avoid flash -->
+  <script is:inline>
+    const t = localStorage.getItem('bincio-theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  </script>
+
+  <!-- Reload on bfcache restore so client:only components re-mount -->
+  <script is:inline>
+    window.addEventListener('pageshow', function(e) {
+      if (e.persisted) window.location.reload();
+    });
+  </script>
+
+  <!-- Auth wall: redirect to /login/ on private instances when not authenticated.
+       body[data-auth-pending] is hidden by CSS (below) before the check resolves,
+       eliminating the flash of protected content. -->
+  {instancePrivate && !isPublicPage && (
+    <style is:inline>[data-auth-pending]{visibility:hidden}</style>
+    <script is:inline>
+      fetch('/api/me', { credentials: 'include' })
+        .then(r => {
+          if (r.status === 401 || r.status === 404) {
+            window.location.replace('/login/');
+          } else {
+            document.body.removeAttribute('data-auth-pending');
+          }
+        })
+        .catch(() => { document.body.removeAttribute('data-auth-pending'); });
+    </script>
+  )}
+
+  <style is:global>
+    /* ── Theme tokens ─────────────────────────────────────────────────────── */
+    :root, [data-theme="dark"] {
+      --bg-base:      #09090b;  /* zinc-950 */
+      --bg-card:      #18181b;  /* zinc-900 */
+      --bg-elevated:  #27272a;  /* zinc-800 */
+      --bg-subtle:    #3f3f46;  /* zinc-700 */
+      --text-primary: #ffffff;
+      --text-2:       #e4e4e7;  /* zinc-200 */
+      --text-3:       #d4d4d8;  /* zinc-300 */
+      --text-4:       #a1a1aa;  /* zinc-400 */
+      --text-5:       #71717a;  /* zinc-500 */
+      --border:       #27272a;  /* zinc-800 */
+      --border-sub:   #3f3f46;  /* zinc-700 */
+      --accent:       #00c8ff;
+      --accent-dim:   rgba(0,200,255,0.15);
+    }
+
+    [data-theme="light"] {
+      --bg-base:      #fafafa;  /* zinc-50  */
+      --bg-card:      #f4f4f5;  /* zinc-100 */
+      --bg-elevated:  #e4e4e7;  /* zinc-200 */
+      --bg-subtle:    #d4d4d8;  /* zinc-300 */
+      --text-primary: #18181b;  /* zinc-900 */
+      --text-2:       #27272a;  /* zinc-800 */
+      --text-3:       #3f3f46;  /* zinc-700 */
+      --text-4:       #52525b;  /* zinc-600 */
+      --text-5:       #71717a;  /* zinc-500 */
+      --border:       #e4e4e7;  /* zinc-200 */
+      --border-sub:   #d4d4d8;  /* zinc-300 */
+      --accent:       #0284c7;  /* sky-600  */
+      --accent-dim:   rgba(2,132,199,0.12);
+    }
+
+    /* ── Tailwind zinc overrides for light mode ────────────────────────────
+       Overrides hardcoded Tailwind classes from all components in one place.
+       !important needed to beat Tailwind's generated specificity.          */
+    [data-theme="light"] .bg-zinc-950  { background-color: var(--bg-base)     !important; }
+    [data-theme="light"] .bg-zinc-900  { background-color: var(--bg-card)     !important; }
+    [data-theme="light"] .bg-zinc-800  { background-color: var(--bg-elevated) !important; }
+    [data-theme="light"] .bg-zinc-700  { background-color: var(--bg-subtle)   !important; }
+
+    [data-theme="light"] .text-white   { color: var(--text-primary) !important; }
+    [data-theme="light"] .text-zinc-100{ color: var(--text-primary) !important; }
+    [data-theme="light"] .text-zinc-200{ color: var(--text-2)       !important; }
+    [data-theme="light"] .text-zinc-300{ color: var(--text-3)       !important; }
+    [data-theme="light"] .text-zinc-400{ color: var(--text-4)       !important; }
+    [data-theme="light"] .text-zinc-500{ color: var(--text-5)       !important; }
+
+    [data-theme="light"] .border-zinc-800 { border-color: var(--border)     !important; }
+    [data-theme="light"] .border-zinc-700 { border-color: var(--border-sub) !important; }
+
+    /* Opacity variants (nav backdrop, tooltips, overlays) */
+    [data-theme="light"] .bg-zinc-950\/90 { background-color: rgba(250,250,250,0.92) !important; }
+    [data-theme="light"] .bg-zinc-900\/95 { background-color: rgba(244,244,245,0.95) !important; }
+
+    /* Soften shadows in light mode */
+    [data-theme="light"] .shadow-2xl {
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.12) !important;
+    }
+
+    /* ── Base reset ─────────────────────────────────────────────────────── */
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; overflow-x: hidden; }
+    .maplibregl-canvas { outline: none; }
+
+    /* Nav links scroll horizontally on narrow screens without a scrollbar */
+    .nav-links { scrollbar-width: none; -ms-overflow-style: none; }
+    .nav-links::-webkit-scrollbar { display: none; }
+  </style>
+</head>
+<body
+  class="font-sans antialiased min-h-screen"
+  style="background-color: var(--bg-base); color: var(--text-primary)"
+  data-auth-pending={instancePrivate && !isPublicPage ? '' : undefined}
+>
+  <nav
+    class="border-b border-zinc-800 sticky top-0 z-50 bg-zinc-950/90 backdrop-blur"
+    style="border-color: var(--border)"
+  >
+    <div class="max-w-7xl mx-auto px-4 h-12 flex items-center gap-3">
+      <!-- Logo: always visible, never shrinks. Full name on sm+, abbreviated on mobile. -->
+      <a href={baseUrl} class="font-bold text-white tracking-tight hover:text-[--accent] transition-colors shrink-0">
+        <span class="hidden sm:inline">Bincio<span class="text-[--accent]">Activity</span></span>
+        <span class="sm:hidden">B<span class="text-[--accent]">A</span></span>
+      </a>
+      {!isPublicPage && (
+        <!-- Links: scroll horizontally on mobile, no visible scrollbar -->
+        <div class="nav-links flex items-center gap-5 overflow-x-auto flex-1 min-w-0">
+          <!-- Feed tab: only shown for multi-user (more than one shard) -->
+          {!singleHandle && (
+            <a id="nav-feed" href={baseUrl} class="text-sm text-zinc-400 hover:text-white transition-colors shrink-0">Feed</a>
+          )}
+          <!-- Single-user: static handle link. Multi-user: populated by user-widget script. -->
+          {singleHandle
+            ? <a href={`${baseUrl}u/${singleHandle}/`} class="text-sm text-zinc-400 hover:text-white transition-colors shrink-0">@{singleHandle}</a>
+            : <a id="nav-me" href="#" style="display:none" class="text-sm text-[--accent] hover:text-white transition-colors shrink-0"></a>
+          }
+          <!-- Per-user nav links — updated by user-widget script in multi-user mode -->
+          <a id="nav-stats"   href={singleHandle ? `${baseUrl}u/${singleHandle}/stats/`   : `${baseUrl}stats/`}   data-user-path="stats/"   class="text-sm text-zinc-400 hover:text-white transition-colors shrink-0">Stats</a>
+          <a id="nav-athlete" href={singleHandle ? `${baseUrl}u/${singleHandle}/athlete/` : `${baseUrl}athlete/`} data-user-path="athlete/" class="text-sm text-zinc-400 hover:text-white transition-colors shrink-0">Athlete</a>
+          {!singleHandle && (
+            <a id="nav-community" href={`${baseUrl}community/`} class="text-sm text-zinc-400 hover:text-white transition-colors shrink-0">Community</a>
+          )}
+          {mobileApp && (
+            <a id="nav-record" href={singleHandle ? `${baseUrl}u/${singleHandle}/record/` : `${baseUrl}record/`} data-user-path="record/" class="text-sm text-zinc-400 hover:text-white transition-colors shrink-0">Record</a>
+          )}
+          {mobileApp && (
+            <a href={`${baseUrl}convert/`} class="text-sm text-zinc-400 hover:text-white transition-colors shrink-0">Convert</a>
+          )}
+          <a id="nav-about" href={`${baseUrl}about/`} class="text-sm text-zinc-400 hover:text-white transition-colors shrink-0">About</a>
+        </div>
+      )}
+
+      <!-- Actions: always visible, never shrinks -->
+      <div class="ml-auto shrink-0 flex items-center gap-1">
+        {!isPublicPage && (
+          <>
+            <!-- Admin: active upload jobs badge (hidden until jobs exist) -->
+            <span
+              id="admin-jobs-badge"
+              style="display:none"
+              title=""
+              class="text-xs px-2 py-0.5 rounded-full bg-amber-900/60 text-amber-300 border border-amber-700/50 animate-pulse cursor-default"
+            ></span>
+            <!-- Settings link — hidden until logged in -->
+            <a
+              id="nav-settings"
+              href={`${baseUrl}settings/`}
+              style="display:none"
+              class="text-xs text-zinc-500 hover:text-white transition-colors px-1"
+            >Settings</a>
+            <!-- Admin link — hidden until confirmed admin -->
+            <a
+              id="nav-admin"
+              href={`${baseUrl}admin/`}
+              style="display:none"
+              class="text-xs text-zinc-500 hover:text-white transition-colors px-1"
+            >Admin</a>
+
+            <!-- Logout button — hidden until logged in -->
+            <button
+              id="nav-logout"
+              style="display:none"
+              class="text-xs text-zinc-500 hover:text-white transition-colors px-2 h-8"
+              aria-label="Log out"
+            >Log out</button>
+            {editEnabled && (
+              <button
+                id="upload-btn"
+                class="text-zinc-400 hover:text-white transition-colors w-8 h-8 flex items-center justify-center rounded-md hover:bg-zinc-800 text-base"
+                aria-label="Upload activity"
+                title="Upload activity"
+              >↑</button>
+            )}
+          </>
+        )}
+        <button
+          id="theme-toggle"
+          class="text-zinc-400 hover:text-white transition-colors w-8 h-8 flex items-center justify-center rounded-md hover:bg-zinc-800 text-base"
+          aria-label="Toggle theme"
+        >☀</button>
+      </div>
+    </div>
+  </nav>
+
+  {editEnabled && (
+    <!-- Add activity modal -->
+    <div
+      id="upload-modal"
+      style="display:none"
+      class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Add activity"
+    >
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 w-full max-w-sm mx-4 shadow-2xl">
+        <div class="flex items-center justify-between mb-4">
+          <h2 id="upload-title" class="font-semibold text-white text-sm">Add activity</h2>
+          <button id="upload-close" class="text-zinc-500 hover:text-white transition-colors text-xl leading-none" aria-label="Close">×</button>
+        </div>
+
+        <!-- View: choose source -->
+        <div id="upload-view-choose">
+          <div class="flex flex-col gap-3">
+            <button
+              id="upload-choose-file"
+              class="flex items-center gap-3 p-4 rounded-lg border border-zinc-700 hover:border-zinc-500 hover:bg-zinc-800 transition-colors text-left"
+            >
+              <span class="text-2xl">📁</span>
+              <div>
+                <p class="text-sm font-medium text-white">Upload file</p>
+                <p class="text-xs text-zinc-500">FIT, GPX, or TCX</p>
+              </div>
+            </button>
+            <button
+              id="upload-choose-strava"
+              class="flex items-center gap-3 p-4 rounded-lg border border-zinc-700 hover:border-zinc-500 hover:bg-zinc-800 transition-colors text-left"
+            >
+              <span class="text-2xl">🟠</span>
+              <div>
+                <p class="text-sm font-medium text-white">Sync from Strava</p>
+                <p id="strava-choose-sub" class="text-xs text-zinc-500">Checking…</p>
+              </div>
+            </button>
+            <button
+              id="upload-choose-zip"
+              class="flex items-center gap-3 p-4 rounded-lg border border-zinc-700 hover:border-zinc-500 hover:bg-zinc-800 transition-colors text-left"
+            >
+              <span class="text-2xl">📦</span>
+              <div>
+                <p class="text-sm font-medium text-white">Strava export ZIP</p>
+                <p class="text-xs text-zinc-500">Import your full Strava archive</p>
+              </div>
+            </button>
+            <button
+              id="upload-choose-garmin"
+              class="flex items-center gap-3 p-4 rounded-lg border border-zinc-700 hover:border-zinc-500 hover:bg-zinc-800 transition-colors text-left"
+            >
+              <span class="text-2xl">⌚</span>
+              <div>
+                <p class="text-sm font-medium text-white">Sync from Garmin Connect</p>
+                <p id="garmin-choose-sub" class="text-xs text-zinc-500">Checking…</p>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- View: file upload -->
+        <div id="upload-view-file" style="display:none">
+          <button id="upload-back-file" class="text-xs text-zinc-500 hover:text-white mb-3 transition-colors">← Back</button>
+          <div
+            id="upload-drop"
+            class="border-2 border-dashed border-zinc-700 rounded-lg p-8 text-center text-zinc-500 text-sm cursor-pointer hover:border-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            <div id="upload-label">Drop FIT, GPX, TCX, or activities.csv<br/>or click to browse</div>
+            <input id="upload-input" type="file" accept=".fit,.gpx,.tcx,.fit.gz,.gpx.gz,.tcx.gz,.gz,.csv,application/gpx+xml,application/vnd.garmin.tcx+xml,application/gzip,application/x-gzip,application/octet-stream" class="hidden" multiple />
+          </div>
+          <label class="flex items-start gap-2 mt-3 cursor-pointer group">
+            <input
+              id="upload-keep-original"
+              type="checkbox"
+              class="mt-0.5 accent-blue-500 shrink-0"
+            />
+            <span class="text-xs text-zinc-500 group-hover:text-zinc-300 transition-colors leading-snug">
+              Keep original file on server
+              <span class="text-zinc-600 block mt-0.5">Lets you reprocess if the format changes. See the <a href={`${baseUrl}about/`} class="underline hover:text-zinc-400">About page</a> for details.</span>
+            </span>
+          </label>
+          <label class="flex items-start gap-2 mt-2 cursor-pointer group">
+            <input
+              id="upload-overwrite"
+              type="checkbox"
+              class="mt-0.5 accent-amber-500 shrink-0"
+            />
+            <span class="text-xs text-zinc-500 group-hover:text-zinc-300 transition-colors leading-snug">
+              Overwrite existing activities
+              <span class="text-zinc-600 block mt-0.5">Re-extract and replace any duplicate found on the server. Use to fix a corrupted or mis-parsed activity.</span>
+            </span>
+          </label>
+          <p id="upload-status" class="mt-3 text-xs text-center" style="color: var(--text-5); min-height: 1.25rem"></p>
+        </div>
+
+        <!-- View: Strava sync -->
+        <div id="upload-view-strava" style="display:none">
+          <button id="upload-back-strava" class="text-xs text-zinc-500 hover:text-white mb-3 transition-colors">← Back</button>
+          <div id="strava-connect-area" style="display:none">
+            <p class="text-sm text-zinc-400 mb-4">Connect your Strava account to sync activities automatically.</p>
+            <button
+              id="strava-connect-btn"
+              class="w-full py-2 px-4 rounded-lg font-medium text-sm transition-colors"
+              style="background:#fc4c02; color:white;"
+            >Connect Strava</button>
+          </div>
+          <div id="strava-sync-area" style="display:none">
+            <p class="text-xs text-zinc-500 mb-1">Last sync: <span id="strava-last-sync">never</span></p>
+            <button
+              id="strava-sync-btn"
+              class="w-full py-2 px-4 rounded-lg font-medium text-sm bg-zinc-700 hover:bg-zinc-600 text-white transition-colors mt-2"
+            >Sync now</button>
+            <div class="flex gap-2 mt-1">
+              <button
+                id="strava-reset-soft-btn"
+                class="flex-1 py-1.5 px-3 rounded-lg text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
+                title="Set sync point to your most recent activity — next sync only fetches newer ones"
+              >Reset</button>
+              <button
+                id="strava-reset-hard-btn"
+                class="flex-1 py-1.5 px-3 rounded-lg text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
+                title="Clear sync point — next sync re-checks all Strava activities"
+              >Hard reset</button>
+            </div>
+          </div>
+          <p id="strava-status" class="mt-3 text-xs text-center" style="min-height: 1.25rem"></p>
+        </div>
+
+        <!-- View: Strava ZIP upload -->
+        <div id="upload-view-zip" style="display:none">
+          <button id="upload-back-zip" class="text-xs text-zinc-500 hover:text-white mb-3 transition-colors">← Back</button>
+          <div class="rounded-lg border border-amber-800/50 bg-amber-950/30 p-3 mb-4 text-xs text-amber-300 leading-relaxed">
+            ⚠ The ZIP will be processed and <strong>immediately deleted</strong> from the server — originals are not kept. Make sure you keep your own copy.
+          </div>
+          <div
+            id="zip-drop"
+            class="border-2 border-dashed border-zinc-700 rounded-lg p-6 text-center text-zinc-500 text-sm cursor-pointer hover:border-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            <div id="zip-label">Drop your Strava export .zip<br/>or click to browse</div>
+            <input id="zip-input" type="file" accept=".zip" class="hidden" />
+          </div>
+          <label class="flex items-center gap-2 mt-3 text-xs text-zinc-400 cursor-pointer select-none">
+            <input id="zip-private" type="checkbox" class="accent-blue-500" />
+            Mark all imported activities as unlisted
+            <span class="text-zinc-600">(not shown in feed; GPS track still accessible by URL)</span>
+          </label>
+          <p id="zip-status" class="mt-3 text-xs text-center leading-relaxed" style="min-height: 1.25rem"></p>
+        </div>
+
+        <!-- View: Garmin Connect sync -->
+        <div id="upload-view-garmin" style="display:none">
+          <button id="upload-back-garmin" class="text-xs text-zinc-500 hover:text-white mb-3 transition-colors">← Back</button>
+          <div class="rounded-lg border border-amber-800/50 bg-amber-950/30 p-3 mb-4 text-xs text-amber-300 leading-relaxed">
+            ⚠ Garmin Connect has no official API. Your credentials are encrypted at rest and used to log in on your behalf. <a href={`${baseUrl}about/`} class="underline hover:text-amber-100">Learn more</a>.
+          </div>
+          <!-- Not connected -->
+          <div id="garmin-connect-area" style="display:none">
+            <p class="text-sm text-zinc-400 mb-3">Enter your Garmin Connect credentials to sync activities.</p>
+            <input
+              id="garmin-email"
+              type="email"
+              placeholder="Email"
+              class="w-full mb-2 px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
+            />
+            <input
+              id="garmin-password"
+              type="password"
+              placeholder="Password"
+              class="w-full mb-3 px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
+            />
+            <button
+              id="garmin-connect-btn"
+              class="w-full py-2 px-4 rounded-lg font-medium text-sm bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+            >Connect</button>
+          </div>
+          <!-- Connected -->
+          <div id="garmin-sync-area" style="display:none">
+            <p class="text-xs text-zinc-500 mb-1">Last sync: <span id="garmin-last-sync">never</span></p>
+            <button
+              id="garmin-sync-btn"
+              class="w-full py-2 px-4 rounded-lg font-medium text-sm bg-zinc-700 hover:bg-zinc-600 text-white transition-colors mt-2"
+            >Sync now</button>
+            <button
+              id="garmin-disconnect-btn"
+              class="w-full mt-2 py-1.5 px-3 rounded-lg text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
+            >Disconnect</button>
+          </div>
+          <p id="garmin-status" class="mt-3 text-xs text-center" style="min-height: 1.25rem"></p>
+        </div>
+      </div>
+    </div>
+  )}
+
+  <main class="max-w-7xl mx-auto px-4 py-6">
+    <slot />
+  </main>
+
+  <script>
+    // Register service worker for local activity storage (offline support)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+  </script>
+
+  <script>
+    const btn = document.getElementById('theme-toggle') as HTMLButtonElement;
+
+    function applyTheme(theme: string) {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('bincio-theme', theme);
+      btn.textContent = theme === 'dark' ? '☀' : '☾';
+      btn.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+    }
+
+    // Sync icon with current theme (set by inline script above)
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    applyTheme(current);
+
+    btn.addEventListener('click', () => {
+      const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      applyTheme(next);
+    });
+  </script>
+
+  <!-- Single-user: expose the handle synchronously so profile pages can detect "own profile" -->
+  {singleHandle && (
+    <script define:vars={{ singleHandle }}>
+      window.__bincioMe = singleHandle;
+      window.dispatchEvent(new CustomEvent('bincio:me', { detail: singleHandle }));
+    </script>
+  )}
+
+  <!-- User widget: only needed for multi-user (single-user nav links are static) -->
+  {!singleHandle && (
+    <script define:vars={{ baseUrl }}>
+      (async () => {
+        try {
+          const r = await fetch('/api/me', { credentials: 'include' });
+          if (!r.ok) return;
+          const user = await r.json();
+
+          // Expose handle for profile pages
+          window.__bincioMe = user.handle;
+          window.dispatchEvent(new CustomEvent('bincio:me', { detail: user.handle }));
+
+          // Show @handle link → /u/{handle}/
+          const meEl = document.getElementById('nav-me');
+          if (meEl) {
+            meEl.textContent = '@' + user.handle;
+            meEl.href = baseUrl + 'u/' + user.handle + '/';
+            meEl.style.display = '';
+          }
+
+          // Update per-user nav links to point to /u/{handle}/{page}/
+          document.querySelectorAll('[data-user-path]').forEach(el => {
+            el.href = baseUrl + 'u/' + user.handle + '/' + el.getAttribute('data-user-path');
+          });
+
+          // Show settings + logout links
+          const settingsEl = document.getElementById('nav-settings');
+          if (settingsEl) settingsEl.style.display = '';
+          const logoutEl = document.getElementById('nav-logout');
+          if (logoutEl) logoutEl.style.display = '';
+
+          // Pre-populate the "keep original" checkbox from the instance default
+          const chk = document.getElementById('upload-keep-original');
+          if (chk && user.store_originals_default) chk.checked = true;
+
+          // Apply nav visibility prefs
+          try {
+            const pr = await fetch('/api/me/prefs', { credentials: 'include' });
+            if (pr.ok) {
+              const prefs = await pr.json();
+              const navHideMap = {
+                'nav_hide_feed':      'nav-feed',
+                'nav_hide_community': 'nav-community',
+                'nav_hide_about':     'nav-about',
+              };
+              for (const [key, elId] of Object.entries(navHideMap)) {
+                if (prefs[key] === 'true') {
+                  const el = document.getElementById(elId);
+                  if (el) el.style.display = 'none';
+                }
+              }
+            }
+          } catch (_) {}
+
+          // Admin: show admin link and poll for active jobs
+          if (user.is_admin) {
+            const adminLink = document.getElementById('nav-admin');
+            if (adminLink) adminLink.style.display = '';
+            const badge = document.getElementById('admin-jobs-badge');
+            async function pollJobs() {
+              try {
+                const jr = await fetch('/api/admin/jobs', { credentials: 'include' });
+                if (!jr.ok) return;
+                const jobs = await jr.json();
+                if (!badge) return;
+                if (jobs.length === 0) {
+                  badge.style.display = 'none';
+                } else {
+                  const summary = jobs.map(j =>
+                    `@${j.user}: ${j.done}/${j.total} files`
+                  ).join(' · ');
+                  badge.title = summary;
+                  badge.textContent = `${jobs.length} upload${jobs.length > 1 ? 's' : ''} running`;
+                  badge.style.display = '';
+                }
+              } catch (_) {}
+            }
+            pollJobs();
+            setInterval(pollJobs, 5000);
+          }
+        } catch (_) {}
+      })();
+
+      document.getElementById('nav-logout')?.addEventListener('click', async () => {
+        try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }); } catch (_) {}
+        window.location.href = baseUrl + 'login/';
+      });
+    </script>
+  )}
+
+  {editEnabled && (
+    <script define:vars={{ editUrl, baseUrl }}>
+      const modal         = document.getElementById('upload-modal');
+      const openBtn       = document.getElementById('upload-btn');
+      const closeBtn      = document.getElementById('upload-close');
+      const viewChoose    = document.getElementById('upload-view-choose');
+      const viewFile      = document.getElementById('upload-view-file');
+      const viewStrava    = document.getElementById('upload-view-strava');
+      const viewZip       = document.getElementById('upload-view-zip');
+      const viewGarmin    = document.getElementById('upload-view-garmin');
+      const chooseFile    = document.getElementById('upload-choose-file');
+      const chooseStrava  = document.getElementById('upload-choose-strava');
+      const chooseZip     = document.getElementById('upload-choose-zip');
+      const chooseGarmin  = document.getElementById('upload-choose-garmin');
+      const backFile      = document.getElementById('upload-back-file');
+      const backStrava    = document.getElementById('upload-back-strava');
+      const backZip       = document.getElementById('upload-back-zip');
+      const backGarmin    = document.getElementById('upload-back-garmin');
+      const zipDrop       = document.getElementById('zip-drop');
+      const zipInput      = document.getElementById('zip-input');
+      const zipLabel      = document.getElementById('zip-label');
+      const zipStatus     = document.getElementById('zip-status');
+      const zipPrivate    = document.getElementById('zip-private');
+      const drop              = document.getElementById('upload-drop');
+      const input             = document.getElementById('upload-input');
+      const label             = document.getElementById('upload-label');
+      const keepOriginalChk   = document.getElementById('upload-keep-original');
+      const overwriteChk      = document.getElementById('upload-overwrite');
+      const fileStatus        = document.getElementById('upload-status');
+      const stravaStatus  = document.getElementById('strava-status');
+      const stravaConnect = document.getElementById('strava-connect-area');
+      const stravaSync    = document.getElementById('strava-sync-area');
+      const stravaConnBtn = document.getElementById('strava-connect-btn');
+      const stravaSyncBtn       = document.getElementById('strava-sync-btn');
+      const stravaResetSoftBtn  = document.getElementById('strava-reset-soft-btn');
+      const stravaResetHardBtn  = document.getElementById('strava-reset-hard-btn');
+      const stravaLastSync = document.getElementById('strava-last-sync');
+      const stravaChooseSub = document.getElementById('strava-choose-sub');
+      const garminStatus      = document.getElementById('garmin-status');
+      const garminConnect     = document.getElementById('garmin-connect-area');
+      const garminSync        = document.getElementById('garmin-sync-area');
+      const garminEmail       = document.getElementById('garmin-email');
+      const garminPassword    = document.getElementById('garmin-password');
+      const garminConnBtn     = document.getElementById('garmin-connect-btn');
+      const garminSyncBtn     = document.getElementById('garmin-sync-btn');
+      const garminDisconnBtn  = document.getElementById('garmin-disconnect-btn');
+      const garminLastSync    = document.getElementById('garmin-last-sync');
+      const garminChooseSub   = document.getElementById('garmin-choose-sub');
+
+      // ── view helpers ──────────────────────────────────────────────────────
+      function showView(name) {
+        viewChoose.style.display = name === 'choose' ? '' : 'none';
+        viewFile.style.display   = name === 'file'   ? '' : 'none';
+        viewStrava.style.display = name === 'strava' ? '' : 'none';
+        viewZip.style.display    = name === 'zip'    ? '' : 'none';
+        viewGarmin.style.display = name === 'garmin' ? '' : 'none';
+      }
+
+      function openModal() {
+        showView('choose');
+        fileStatus.textContent = '';
+        label.innerHTML = 'Drop a FIT, GPX, or TCX file<br>or click to browse';
+        modal.style.display = 'flex';
+      }
+
+      function closeModal() {
+        modal.style.display = 'none';
+      }
+
+      openBtn.addEventListener('click', openModal);
+      closeBtn.addEventListener('click', closeModal);
+      modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+      document.addEventListener('keydown', e => { if (e.key === 'Escape' && modal.style.display !== 'none') closeModal(); });
+
+      chooseFile.addEventListener('click', () => showView('file'));
+      chooseZip.addEventListener('click',  () => showView('zip'));
+      backFile.addEventListener('click',   () => showView('choose'));
+      backStrava.addEventListener('click', () => showView('choose'));
+      backZip.addEventListener('click',    () => showView('choose'));
+      backGarmin.addEventListener('click', () => showView('choose'));
+
+      // ── file upload ───────────────────────────────────────────────────────
+      drop.addEventListener('click', () => input.click());
+      drop.addEventListener('dragover', e => { e.preventDefault(); drop.style.borderColor = 'var(--accent)'; drop.style.color = 'var(--text-primary)'; });
+      drop.addEventListener('dragleave', () => { drop.style.borderColor = ''; drop.style.color = ''; });
+      drop.addEventListener('drop', e => {
+        e.preventDefault();
+        drop.style.borderColor = '';
+        drop.style.color = '';
+        if (e.dataTransfer?.files.length) doUpload(e.dataTransfer.files);
+      });
+      input.addEventListener('change', () => { if (input.files?.length) doUpload(input.files); });
+
+      function doUpload(files) {
+        const n = files.length;
+        label.textContent = n === 1 ? files[0].name : `${n} files selected`;
+        fileStatus.textContent = `Uploading…`;
+        fileStatus.style.color = 'var(--text-4)';
+        drop.style.pointerEvents = 'none';
+
+        const fd = new FormData();
+        for (const f of files) fd.append('files', f);
+        fd.append('store_original', keepOriginalChk?.checked ? 'true' : 'false');
+        fd.append('overwrite', overwriteChk?.checked ? 'true' : 'false');
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${editUrl}/api/upload`);
+        xhr.withCredentials = true;
+        xhr.setRequestHeader('Accept', 'text/event-stream');
+
+        let buf = '';
+        let added = 0, overwrittenCount = 0, dupes = 0, errors = 0, csvUpdates = 0;
+
+        xhr.onprogress = () => {
+          const newText = xhr.responseText.slice(buf.length);
+          buf = xhr.responseText;
+          for (const line of newText.split('\n')) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const ev = JSON.parse(line.slice(6));
+              if (ev.type === 'progress') {
+                const pct = Math.round((ev.n / ev.total) * 100);
+                const icon = ev.status === 'imported' ? '↓' : ev.status === 'overwritten' ? '↺' : ev.status === 'duplicate' ? '·' : '✗';
+                fileStatus.textContent = `${icon} ${ev.n}/${ev.total} (${pct}%) — ${ev.name}`;
+                if (ev.status === 'imported') added++;
+                else if (ev.status === 'overwritten') overwrittenCount++;
+                else if (ev.status === 'duplicate') dupes++;
+                else errors++;
+              } else if (ev.type === 'csv') {
+                csvUpdates = ev.updates;
+              } else if (ev.type === 'done') {
+                added = ev.added; overwrittenCount = ev.overwritten ?? 0; dupes = ev.duplicates; errors = ev.errors; csvUpdates = ev.csv_updates;
+                const parts = [];
+                if (added > 0) parts.push(`${added} added`);
+                if (overwrittenCount > 0) parts.push(`${overwrittenCount} overwritten`);
+                if (csvUpdates > 0) parts.push(`${csvUpdates} updated from CSV`);
+                if (dupes) parts.push(`${dupes} duplicate${dupes > 1 ? 's' : ''}`);
+                if (errors) parts.push(`${errors} failed`);
+                if (parts.length === 0) parts.push('nothing to add');
+                fileStatus.textContent = parts.join(', ');
+                const anyGood = added > 0 || overwrittenCount > 0 || csvUpdates > 0;
+                fileStatus.style.color = anyGood ? '#4ade80' : '#a1a1aa';
+                if (anyGood) setTimeout(() => window.location.reload(), 1200);
+                else drop.style.pointerEvents = '';
+                input.value = '';
+              }
+            } catch (_) {}
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status !== 200) {
+            fileStatus.textContent = `Upload failed (${xhr.status}).`;
+            fileStatus.style.color = '#f87171';
+            drop.style.pointerEvents = '';
+            input.value = '';
+          }
+        };
+
+        xhr.onerror = () => {
+          fileStatus.textContent = 'Upload failed — check your connection.';
+          fileStatus.style.color = '#f87171';
+          drop.style.pointerEvents = '';
+          input.value = '';
+        };
+
+        xhr.send(fd);
+      }
+
+      // ── Strava ────────────────────────────────────────────────────────────
+      let stravaConfigured = false;
+
+      async function loadStravaStatus() {
+        try {
+          const r = await fetch(`${editUrl}/api/strava/status`);
+          if (!r.ok) return;
+          const d = await r.json();
+          stravaConfigured = d.configured;
+          if (!d.configured) {
+            stravaChooseSub.textContent = 'Not configured';
+            chooseStrava.disabled = true;
+            chooseStrava.classList.add('opacity-40', 'cursor-not-allowed');
+            return;
+          }
+          stravaChooseSub.textContent = d.connected
+            ? (d.last_sync ? 'Connected · tap to sync' : 'Connected · never synced')
+            : 'Tap to connect';
+          stravaConnect.style.display = d.connected ? 'none' : '';
+          stravaSync.style.display    = d.connected ? '' : 'none';
+          if (d.last_sync) {
+            stravaLastSync.textContent = new Date(d.last_sync * 1000).toLocaleString();
+          }
+        } catch (_) {}
+      }
+
+      loadStravaStatus();
+
+      chooseStrava.addEventListener('click', () => {
+        if (!stravaConfigured) return;
+        showView('strava');
+      });
+
+      stravaConnBtn.addEventListener('click', async () => {
+        stravaStatus.textContent = 'Opening Strava…';
+        stravaStatus.style.color = 'var(--text-4)';
+        try {
+          const r = await fetch(`${editUrl}/api/strava/auth-url`);
+          if (!r.ok) throw new Error(await r.text());
+          const { url } = await r.json();
+
+          const popup = window.open(url, 'strava-auth', 'width=600,height=700,left=200,top=100');
+          stravaStatus.textContent = 'Waiting for Strava authorisation…';
+
+          // Listen for the callback redirect closing the popup
+          const poll = setInterval(() => {
+            try {
+              if (popup && popup.location.href.includes('strava=connected')) {
+                clearInterval(poll);
+                popup.close();
+                stravaStatus.textContent = 'Connected!';
+                stravaStatus.style.color = '#4ade80';
+                stravaConnect.style.display = 'none';
+                stravaSync.style.display = '';
+                stravaLastSync.textContent = 'never';
+              } else if (popup && popup.location.href.includes('strava=error')) {
+                clearInterval(poll);
+                popup.close();
+                stravaStatus.textContent = 'Authorisation failed.';
+                stravaStatus.style.color = '#f87171';
+              }
+            } catch (_) {}
+            if (popup && popup.closed) clearInterval(poll);
+          }, 500);
+        } catch (e) {
+          stravaStatus.textContent = 'Error: ' + e.message;
+          stravaStatus.style.color = '#f87171';
+        }
+      });
+
+      stravaSyncBtn.addEventListener('click', () => {
+        stravaSyncBtn.disabled = true;
+        stravaSyncBtn.textContent = 'Syncing…';
+        stravaStatus.textContent = '';
+        stravaStatus.style.color = '';
+
+        const es = new EventSource(`${editUrl}/api/strava/sync/stream`, { withCredentials: true });
+        let imported = 0;
+
+        es.onmessage = (e) => {
+          const d = JSON.parse(e.data);
+          if (d.type === 'fetching') {
+            stravaStatus.textContent = 'Fetching activity list from Strava…';
+          } else if (d.type === 'progress') {
+            const pct = Math.round((d.n / d.total) * 100);
+            const icon = d.status === 'imported' ? '↓' : d.status === 'error' ? '✗' : '·';
+            stravaStatus.textContent = `${icon} ${d.n}/${d.total} (${pct}%) — ${d.name}`;
+            if (d.status === 'imported') imported++;
+          } else if (d.type === 'done') {
+            es.close();
+            stravaLastSync.textContent = new Date().toLocaleString();
+            const errNote = d.error_count ? `, ${d.error_count} errors` : '';
+            stravaStatus.textContent = `Done — ${d.imported} imported, ${d.skipped} already up to date${errNote}.`;
+            stravaStatus.style.color = '#4ade80';
+            stravaSyncBtn.disabled = false;
+            stravaSyncBtn.textContent = 'Sync now';
+            if (d.imported > 0) setTimeout(() => window.location.reload(), 1500);
+          } else if (d.type === 'error') {
+            es.close();
+            stravaStatus.textContent = 'Error: ' + d.message;
+            stravaStatus.style.color = '#f87171';
+            stravaSyncBtn.disabled = false;
+            stravaSyncBtn.textContent = 'Sync now';
+          }
+        };
+
+        es.onerror = () => {
+          es.close();
+          if (stravaSyncBtn.disabled) {
+            stravaStatus.textContent = 'Connection lost. Check logs.';
+            stravaStatus.style.color = '#f87171';
+            stravaSyncBtn.disabled = false;
+            stravaSyncBtn.textContent = 'Sync now';
+          }
+        };
+      });
+
+      async function stravaReset(mode) {
+        const btn = mode === 'soft' ? stravaResetSoftBtn : stravaResetHardBtn;
+        btn.disabled = true;
+        stravaStatus.textContent = '';
+        try {
+          const r = await fetch(`${editUrl}/api/strava/reset`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode }),
+          });
+          if (!r.ok) throw new Error(await r.text());
+          const d = await r.json();
+          if (mode === 'hard') {
+            stravaStatus.textContent = 'Hard reset done — next sync will re-check all activities.';
+          } else {
+            const date = d.last_sync_at ? new Date(d.last_sync_at * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'none';
+            stravaStatus.textContent = `Reset to ${date} — next sync fetches only newer activities.`;
+          }
+          stravaStatus.style.color = '#a1a1aa';
+        } catch (e) {
+          stravaStatus.textContent = 'Error: ' + e.message;
+          stravaStatus.style.color = '#f87171';
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      stravaResetSoftBtn.addEventListener('click', () => stravaReset('soft'));
+      stravaResetHardBtn.addEventListener('click', () => stravaReset('hard'));
+
+      // ── Strava ZIP upload ─────────────────────────────────────────────────
+      function doZipUpload(file) {
+        if (!file) return;
+        zipLabel.textContent = file.name;
+        zipStatus.textContent = 'Uploading…';
+        zipStatus.style.color = '';
+
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('private', zipPrivate?.checked ? 'true' : 'false');
+
+        // POST the file; server responds with SSE stream immediately after receiving body
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${editUrl}/api/upload/strava-zip`);
+        xhr.withCredentials = true;
+        xhr.setRequestHeader('Accept', 'text/event-stream');
+
+        let buf = '';
+        let imported = 0;
+
+        xhr.onprogress = () => {
+          // Parse SSE lines from the incrementally received response text
+          const newText = xhr.responseText.slice(buf.length);
+          buf = xhr.responseText;
+          for (const line of newText.split('\n')) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const ev = JSON.parse(line.slice(6));
+              if (ev.type === 'validating') {
+                zipStatus.textContent = 'Validating ZIP structure…';
+              } else if (ev.type === 'extracting_csv') {
+                zipStatus.textContent = 'Reading activities.csv…';
+              } else if (ev.type === 'progress') {
+                const pct = Math.round((ev.n / ev.total) * 100);
+                const icon = ev.status === 'imported' ? '↓' : ev.status === 'error' ? '✗' : '·';
+                zipStatus.textContent = `${icon} ${ev.n}/${ev.total} (${pct}%) — ${ev.name}`;
+                if (ev.status === 'imported') imported++;
+              } else if (ev.type === 'done') {
+                const errNote = ev.error_count ? `, ${ev.error_count} errors` : '';
+                zipStatus.textContent = `Done — ${ev.imported} imported, ${ev.skipped} already up to date${errNote}.`;
+                zipStatus.style.color = '#4ade80';
+                zipInput.value = '';
+                if (ev.imported > 0) setTimeout(() => window.location.reload(), 1500);
+              } else if (ev.type === 'error') {
+                zipStatus.textContent = 'Error: ' + ev.message;
+                zipStatus.style.color = '#f87171';
+                zipInput.value = '';
+              }
+            } catch (_) {}
+          }
+        };
+
+        xhr.onload = () => {
+          // Fires when the request completes. If we already got a 'done' or 'error'
+          // SSE event via onprogress the status is already set. If not (e.g. a non-SSE
+          // error response), surface the failure.
+          if (xhr.status !== 200) {
+            zipStatus.textContent = `Upload failed (${xhr.status}).`;
+            zipStatus.style.color = '#f87171';
+            zipInput.value = '';
+          }
+        };
+
+        xhr.onerror = () => {
+          zipStatus.textContent = 'Upload failed — check your connection.';
+          zipStatus.style.color = '#f87171';
+        };
+
+        xhr.send(fd);
+      }
+
+      zipDrop.addEventListener('click', () => zipInput.click());
+      zipInput.addEventListener('change', () => doZipUpload(zipInput.files?.[0]));
+      zipDrop.addEventListener('dragover', e => { e.preventDefault(); zipDrop.classList.add('border-zinc-400'); });
+      zipDrop.addEventListener('dragleave', () => zipDrop.classList.remove('border-zinc-400'));
+      zipDrop.addEventListener('drop', e => {
+        e.preventDefault();
+        zipDrop.classList.remove('border-zinc-400');
+        doZipUpload(e.dataTransfer?.files?.[0]);
+      });
+
+      // ── Garmin Connect ────────────────────────────────────────────────────
+      async function loadGarminStatus() {
+        try {
+          const r = await fetch(`${editUrl}/api/garmin/status`, { credentials: 'include' });
+          if (!r.ok) throw new Error();
+          const d = await r.json();
+          garminChooseSub.textContent = d.connected ? 'Connected' : 'Not connected';
+          garminConnect.style.display = d.connected ? 'none' : '';
+          garminSync.style.display    = d.connected ? ''     : 'none';
+          if (d.last_sync) garminLastSync.textContent = new Date(d.last_sync).toLocaleString();
+        } catch (_) {
+          garminChooseSub.textContent = 'Unavailable';
+        }
+      }
+      loadGarminStatus();
+
+      chooseGarmin.addEventListener('click', () => {
+        garminStatus.textContent = '';
+        showView('garmin');
+      });
+
+      garminConnBtn.addEventListener('click', async () => {
+        const email = garminEmail.value.trim();
+        const password = garminPassword.value;
+        if (!email || !password) {
+          garminStatus.textContent = 'Enter email and password.';
+          garminStatus.style.color = '#f87171';
+          return;
+        }
+        garminConnBtn.disabled = true;
+        garminConnBtn.textContent = 'Connecting…';
+        garminStatus.textContent = 'Contacting Garmin — this may take up to a minute…';
+        garminStatus.style.color = '#a1a1aa';
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 90_000);
+          const r = await fetch(`${editUrl}/api/garmin/connect`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password }),
+            signal: controller.signal,
+          });
+          clearTimeout(timeout);
+          const d = await r.json();
+          if (!r.ok) {
+            garminStatus.textContent = 'Error: ' + (d.detail || 'Login failed');
+            garminStatus.style.color = '#f87171';
+          } else {
+            garminPassword.value = '';
+            garminStatus.textContent = `Connected as ${d.display_name || email}!`;
+            garminStatus.style.color = '#4ade80';
+            garminConnect.style.display = 'none';
+            garminSync.style.display = '';
+            garminLastSync.textContent = 'never';
+            garminChooseSub.textContent = 'Connected';
+          }
+        } catch (e) {
+          const msg = e.name === 'AbortError'
+            ? 'Timed out — Garmin login is taking too long. Try again later.'
+            : 'Error: ' + e.message;
+          garminStatus.textContent = msg;
+          garminStatus.style.color = '#f87171';
+        } finally {
+          garminConnBtn.disabled = false;
+          garminConnBtn.textContent = 'Connect';
+        }
+      });
+
+      garminSyncBtn.addEventListener('click', () => {
+        garminSyncBtn.disabled = true;
+        garminSyncBtn.textContent = 'Syncing…';
+        garminStatus.textContent = '';
+        garminStatus.style.color = '';
+
+        const es = new EventSource(`${editUrl}/api/garmin/sync/stream`, { withCredentials: true });
+        es.onmessage = e => {
+          try {
+            const d = JSON.parse(e.data);
+            if (d.type === 'fetching') {
+              garminStatus.textContent = 'Fetching activity list from Garmin…';
+            } else if (d.type === 'progress') {
+              const pct = Math.round((d.n / d.total) * 100);
+              const icon = d.status === 'imported' ? '↓' : d.status === 'error' ? '✗' : '·';
+              garminStatus.textContent = `${icon} ${d.n}/${d.total} (${pct}%) — ${d.name}`;
+            } else if (d.type === 'done') {
+              es.close();
+              garminLastSync.textContent = new Date().toLocaleString();
+              const errNote = d.error_count ? `, ${d.error_count} errors` : '';
+              garminStatus.textContent = `Done — ${d.imported} imported, ${d.skipped} already up to date${errNote}.`;
+              garminStatus.style.color = '#4ade80';
+              garminSyncBtn.disabled = false;
+              garminSyncBtn.textContent = 'Sync now';
+            } else if (d.type === 'error') {
+              es.close();
+              garminStatus.textContent = 'Error: ' + d.message;
+              garminStatus.style.color = '#f87171';
+              garminSyncBtn.disabled = false;
+              garminSyncBtn.textContent = 'Sync now';
+            }
+          } catch (_) {}
+        };
+        es.onerror = () => {
+          if (garminSyncBtn.disabled) {
+            garminStatus.textContent = 'Connection lost. Check logs.';
+            garminStatus.style.color = '#f87171';
+            garminSyncBtn.disabled = false;
+            garminSyncBtn.textContent = 'Sync now';
+          }
+          es.close();
+        };
+      });
+
+      garminDisconnBtn.addEventListener('click', async () => {
+        garminDisconnBtn.disabled = true;
+        garminStatus.textContent = '';
+        try {
+          await fetch(`${editUrl}/api/garmin/disconnect`, { method: 'POST', credentials: 'include' });
+          garminSync.style.display    = 'none';
+          garminConnect.style.display = '';
+          garminStatus.textContent = 'Disconnected.';
+          garminStatus.style.color = '#a1a1aa';
+          garminChooseSub.textContent = 'Not connected';
+        } catch (e) {
+          garminStatus.textContent = 'Error: ' + e.message;
+          garminStatus.style.color = '#f87171';
+        } finally {
+          garminDisconnBtn.disabled = false;
+        }
+      });
+
+      // Handle ?strava= param set by the callback redirect (popup scenario)
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.has('strava')) {
+        history.replaceState(null, '', window.location.pathname);
+      }
+    </script>
+  )}
+</body>
+</html>

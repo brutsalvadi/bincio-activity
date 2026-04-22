@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bincio-activity/bincio/blob/main/schema/bas-v1.schema.json",
+  "title": "BincioActivity Schema v1.0",
+  "description": "Schema for BincioActivity (BAS) data files.",
+  "$defs": {
+    "sport": {
+      "type": "string",
+      "enum": ["cycling", "running", "hiking", "walking", "swimming", "skiing", "other"]
+    },
+    "sub_sport": {
+      "type": ["string", "null"],
+      "enum": ["road", "mountain", "gravel", "indoor", "trail", "track", "nordic", "alpine", "open_water", "pool", null]
+    },
+    "privacy": {
+      "type": "string",
+      "enum": ["public", "blur_start", "no_gps", "private"]
+    },
+    "source": {
+      "type": ["string", "null"],
+      "enum": [
+        "strava_export", "garmin_connect", "wahoo", "komoot",
+        "gpx_file", "fit_file", "tcx_file", "karoo", "manual", null
+      ]
+    },
+    "latlng": {
+      "type": ["array", "null"],
+      "items": { "type": "number" },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "bbox": {
+      "type": ["array", "null"],
+      "items": { "type": "number" },
+      "minItems": 4,
+      "maxItems": 4,
+      "description": "[min_lon, min_lat, max_lon, max_lat]"
+    },
+    "mmp": {
+      "type": ["array", "null"],
+      "description": "Mean Maximal Power curve — [[duration_s, avg_watts], ...]",
+      "items": {
+        "type": "array",
+        "items": { "type": "integer" },
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+    "best_efforts": {
+      "type": ["array", "null"],
+      "description": "Best efforts by distance — [[distance_km, time_s], ...]",
+      "items": {
+        "type": "array",
+        "items": { "type": "number" },
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+    "lap": {
+      "type": "object",
+      "required": ["index", "started_at", "duration_s"],
+      "properties": {
+        "index":            { "type": "integer", "minimum": 0 },
+        "started_at":       { "type": "string", "format": "date-time" },
+        "duration_s":       { "type": ["integer", "null"] },
+        "distance_m":       { "type": ["number", "null"] },
+        "elevation_gain_m": { "type": ["number", "null"] },
+        "avg_speed_kmh":    { "type": ["number", "null"] },
+        "avg_hr_bpm":       { "type": ["integer", "null"] },
+        "avg_power_w":      { "type": ["integer", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "timeseries": {
+      "type": "object",
+      "required": ["t"],
+      "properties": {
+        "t":             { "type": "array", "items": { "type": "integer" } },
+        "lat":           { "type": ["array", "null"], "items": { "type": ["number", "null"] } },
+        "lon":           { "type": ["array", "null"], "items": { "type": ["number", "null"] } },
+        "elevation_m":   { "type": "array", "items": { "type": ["number", "null"] } },
+        "speed_kmh":     { "type": "array", "items": { "type": ["number", "null"] } },
+        "hr_bpm":        { "type": "array", "items": { "type": ["integer", "null"] } },
+        "cadence_rpm":   { "type": "array", "items": { "type": ["integer", "null"] } },
+        "power_w":       { "type": "array", "items": { "type": ["integer", "null"] } },
+        "temperature_c": { "type": "array", "items": { "type": ["number", "null"] } }
+      },
+      "additionalProperties": false
+    },
+    "activity_summary": {
+      "type": "object",
+      "required": ["id", "title", "sport", "started_at", "privacy"],
+      "properties": {
+        "id":                { "type": "string", "minLength": 1 },
+        "title":             { "type": "string" },
+        "sport":             { "$ref": "#/$defs/sport" },
+        "sub_sport":         { "$ref": "#/$defs/sub_sport" },
+        "started_at":        { "type": "string", "format": "date-time" },
+        "distance_m":        { "type": ["number", "null"] },
+        "duration_s":        { "type": ["integer", "null"] },
+        "moving_time_s":     { "type": ["integer", "null"] },
+        "elevation_gain_m":  { "type": ["number", "null"] },
+        "avg_speed_kmh":     { "type": ["number", "null"] },
+        "max_speed_kmh":     { "type": ["number", "null"] },
+        "avg_hr_bpm":        { "type": ["integer", "null"] },
+        "max_hr_bpm":        { "type": ["integer", "null"] },
+        "avg_cadence_rpm":   { "type": ["integer", "null"] },
+        "avg_power_w":       { "type": ["integer", "null"] },
+        "mmp":               { "$ref": "#/$defs/mmp" },
+        "best_efforts":      { "$ref": "#/$defs/best_efforts" },
+        "best_climb_m":      { "type": ["number", "null"] },
+        "source":            { "$ref": "#/$defs/source" },
+        "privacy":           { "$ref": "#/$defs/privacy" },
+        "detail_url":        { "type": ["string", "null"] },
+        "track_url":         { "type": ["string", "null"] },
+        "preview_coords": {
+          "type": ["array", "null"],
+          "description": "Simplified track preview — [[lon, lat], ...] for card thumbnails",
+          "items": {
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "custom":            { "type": "object" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "oneOf": [
+    {
+      "title": "index.json",
+      "type": "object",
+      "required": ["bas_version", "owner", "generated_at", "activities"],
+      "properties": {
+        "bas_version":   { "type": "string", "const": "1.0" },
+        "owner": {
+          "type": "object",
+          "required": ["handle", "display_name"],
+          "properties": {
+            "handle":       { "type": "string", "minLength": 1 },
+            "display_name": { "type": "string" },
+            "avatar_url":   { "type": ["string", "null"] }
+          },
+          "additionalProperties": false
+        },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "shards": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["year", "url", "count"],
+            "properties": {
+              "year":  { "type": "integer" },
+              "url":   { "type": "string" },
+              "count": { "type": "integer" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "activities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/activity_summary" }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "activities/{id}.json",
+      "type": "object",
+      "required": [
+        "bas_version", "id", "title", "sport", "started_at",
+        "privacy", "laps", "timeseries", "custom"
+      ],
+      "properties": {
+        "bas_version":       { "type": "string", "const": "1.0" },
+        "id":                { "type": "string", "minLength": 1 },
+        "title":             { "type": "string" },
+        "description":       { "type": ["string", "null"] },
+        "sport":             { "$ref": "#/$defs/sport" },
+        "sub_sport":         { "$ref": "#/$defs/sub_sport" },
+        "started_at":        { "type": "string", "format": "date-time" },
+        "distance_m":        { "type": ["number", "null"] },
+        "duration_s":        { "type": ["integer", "null"] },
+        "moving_time_s":     { "type": ["integer", "null"] },
+        "elevation_gain_m":  { "type": ["number", "null"] },
+        "elevation_loss_m":  { "type": ["number", "null"] },
+        "avg_speed_kmh":     { "type": ["number", "null"] },
+        "max_speed_kmh":     { "type": ["number", "null"] },
+        "avg_hr_bpm":        { "type": ["integer", "null"] },
+        "max_hr_bpm":        { "type": ["integer", "null"] },
+        "avg_cadence_rpm":   { "type": ["integer", "null"] },
+        "avg_power_w":       { "type": ["integer", "null"] },
+        "max_power_w":       { "type": ["integer", "null"] },
+        "gear":              { "type": ["string", "null"] },
+        "device":            { "type": ["string", "null"] },
+        "bbox":              { "$ref": "#/$defs/bbox" },
+        "start_latlng":      { "$ref": "#/$defs/latlng" },
+        "end_latlng":        { "$ref": "#/$defs/latlng" },
+        "mmp":               { "$ref": "#/$defs/mmp" },
+        "best_efforts":      { "$ref": "#/$defs/best_efforts" },
+        "best_climb_m":      { "type": ["number", "null"] },
+        "laps":              { "type": "array", "items": { "$ref": "#/$defs/lap" } },
+        "timeseries":        { "$ref": "#/$defs/timeseries" },
+        "source":            { "$ref": "#/$defs/source" },
+        "source_file":       { "type": ["string", "null"] },
+        "source_hash":       { "type": ["string", "null"] },
+        "strava_id":         { "type": ["string", "null"] },
+        "duplicate_of":      { "type": ["string", "null"] },
+        "privacy":           { "$ref": "#/$defs/privacy" },
+        "custom":            { "type": "object" }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

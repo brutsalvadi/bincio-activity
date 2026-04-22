@@ -1,0 +1,139 @@
+---
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import Base from '../../layouts/Base.astro';
+import ActivityDetail from '../../components/ActivityDetail.svelte';
+import type { BASIndex, ActivitySummary, AthleteZones } from '../../lib/types';
+
+export async function getStaticPaths() {
+  // Activity pages are not pre-built — all /activity/{id}/ URLs are served
+  // by the activity/index.html shell via nginx try_files and loaded dynamically
+  // by ActivityDetailLoader. Pre-building thousands of pages at build time
+  // exhausts server memory. The shell handles public, unlisted, and local
+  // activities identically with no loss of functionality.
+  return [];
+
+  // Dead code below — kept for reference only.
+  /* eslint-disable no-unreachable */
+  try {
+    const candidates = [
+      process.env.BINCIO_DATA_DIR,
+      resolve(process.cwd(), 'public', 'data'),
+      resolve(process.cwd(), '..', 'bincio_data'),
+    ].filter(Boolean) as string[];
+    const dataDir = candidates.find(d => {
+      try { readFileSync(join(d, 'index.json')); return true; } catch { return false; }
+    })!;
+
+    const root: BASIndex = JSON.parse(readFileSync(join(dataDir, 'index.json'), 'utf-8'));
+
+    // Collect activities from root (single-user) or walk shards (multi-user)
+    function readActivities(indexPath: string, urlPrefix: string = ''): ActivitySummary[] {
+      try {
+        const idx: BASIndex = JSON.parse(readFileSync(indexPath, 'utf-8'));
+        const own = (idx.activities ?? []).map(a =>
+          urlPrefix
+            ? {
+                ...a,
+                detail_url: a.detail_url && !a.detail_url.startsWith('http') ? `${urlPrefix}${a.detail_url}` : a.detail_url,
+                track_url:  a.track_url  && !a.track_url.startsWith('http')  ? `${urlPrefix}${a.track_url}`  : a.track_url,
+              }
+            : a
+        );
+        const fromShards = (idx.shards ?? []).flatMap(s => {
+          const shardPath = join(dataDir, s.url);
+          // Prefix for activities read from this shard: path of the shard dir relative to dataDir
+          const shardDir = s.url.substring(0, s.url.lastIndexOf('/') + 1);
+          return readActivities(shardPath, shardDir).map(a => ({
+            ...a,
+            ...(s.handle && !a.handle ? { handle: s.handle } : {}),
+          }));
+        });
+        return [...own, ...fromShards];
+      } catch {
+        return [];
+      }
+    }
+
+    const activities = readActivities(join(dataDir, 'index.json'));
+    const athlete = root.owner?.athlete ?? null;
+
+    // Build the map from the index first
+    const byId = new Map(
+      activities
+        .filter(a => a.privacy !== 'private' && a.privacy !== 'unlisted' && a.id)
+        .map(a => [a.id, { activity: a, athlete }])
+    );
+
+    // Fallback: scan _merged/activities/ directories for any JSON files not yet
+    // covered by the index (e.g. shard read failures, recently added activities).
+    try {
+      const userDirs = readdirSync(dataDir, { withFileTypes: true })
+        .filter(d => d.isDirectory() && !d.name.startsWith('_') && !d.name.startsWith('.'))
+        .map(d => d.name);
+
+      for (const handle of userDirs) {
+        // Prefer _merged, fall back to plain activities dir
+        const mergedActs = join(dataDir, handle, '_merged', 'activities');
+        const plainActs  = join(dataDir, handle, 'activities');
+        const actsDir    = existsSync(mergedActs) ? mergedActs : (existsSync(plainActs) ? plainActs : null);
+        if (!actsDir) continue;
+
+        const urlPrefix = existsSync(mergedActs)
+          ? `${handle}/_merged/`
+          : `${handle}/`;
+
+        for (const file of readdirSync(actsDir)) {
+          if (!file.endsWith('.json') || file.endsWith('.timeseries.json')) continue;
+          const id = file.slice(0, -5); // strip .json
+          if (byId.has(id)) continue;   // already covered by the index
+          try {
+            const detail = JSON.parse(readFileSync(join(actsDir, file), 'utf-8'));
+            if (detail.privacy === 'private' || detail.privacy === 'unlisted') continue;
+            // Build a minimal ActivitySummary from the detail file
+            const a: ActivitySummary = {
+              id,
+              title:            detail.title ?? id,
+              sport:            detail.sport  ?? 'other',
+              sub_sport:        detail.sub_sport ?? null,
+              started_at:       detail.started_at ?? '',
+              distance_m:       detail.distance_m   ?? null,
+              duration_s:       detail.duration_s   ?? null,
+              moving_time_s:    detail.moving_time_s ?? null,
+              elevation_gain_m: detail.elevation_gain_m ?? null,
+              avg_speed_kmh:    detail.avg_speed_kmh ?? null,
+              max_speed_kmh:    detail.max_speed_kmh ?? null,
+              avg_hr_bpm:       detail.avg_hr_bpm ?? null,
+              max_hr_bpm:       detail.max_hr_bpm ?? null,
+              avg_cadence_rpm:  detail.avg_cadence_rpm ?? null,
+              avg_power_w:      detail.avg_power_w ?? null,
+              mmp:              detail.mmp ?? null,
+              source:           detail.source ?? null,
+              privacy:          detail.privacy ?? 'public',
+              detail_url:       `${urlPrefix}activities/${file}`,
+              track_url:        detail.bbox ? `${urlPrefix}activities/${id}.geojson` : null,
+              preview_coords:   null,
+              handle,
+            };
+            byId.set(id, { activity: a, athlete });
+          } catch { /* skip malformed files */ }
+        }
+      }
+    } catch { /* ignore scan errors */ }
+
+    return [...byId.values()].map(({ activity: a, athlete: ath }) => ({
+      params: { id: a.id },
+      props: { activity: a, athlete: ath },
+    }));
+  } catch {
+    return [];
+  }
+  /* eslint-enable no-unreachable */
+}
+
+const { activity, athlete } = Astro.props as { activity: ActivitySummary; athlete: AthleteZones | null };
+const base = import.meta.env.BASE_URL;
+---
+<Base title={`${activity.title} — BincioActivity`}>
+  <ActivityDetail {activity} {base} {athlete} client:only="svelte" />
+</Base>

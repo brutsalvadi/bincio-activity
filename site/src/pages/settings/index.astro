@@ -1,0 +1,518 @@
+---
+import Base from '../../layouts/Base.astro';
+---
+<Base title="Settings — BincioActivity">
+  <div class="max-w-lg mx-auto px-4 py-10">
+    <h1 class="text-2xl font-bold text-white mb-8">Settings</h1>
+
+    <!-- Storage card -->
+    <section class="mb-6 rounded-xl bg-zinc-900 border border-zinc-800 p-5">
+      <h2 class="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4">Storage</h2>
+      <div id="storage-loading" class="text-zinc-500 text-sm">Loading…</div>
+      <div id="storage-content" class="hidden space-y-2">
+        <div class="flex justify-between text-sm">
+          <span class="text-zinc-400">Activities</span>
+          <span id="st-activities" class="text-white tabular-nums"></span>
+        </div>
+        <div class="flex justify-between text-sm">
+          <span class="text-zinc-400">Original files</span>
+          <span id="st-originals" class="text-white tabular-nums"></span>
+        </div>
+        <div id="st-strava-row" class="flex justify-between text-sm pl-4 hidden">
+          <span class="text-zinc-500">↳ Strava originals</span>
+          <span id="st-strava" class="text-zinc-400 tabular-nums"></span>
+        </div>
+        <div class="flex justify-between text-sm">
+          <span class="text-zinc-400">Photos</span>
+          <span id="st-images" class="text-white tabular-nums"></span>
+        </div>
+        <div class="border-t border-zinc-800 mt-2 pt-2 flex justify-between text-sm font-medium">
+          <span class="text-zinc-300">Total</span>
+          <span id="st-total" class="text-white tabular-nums"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Profile card -->
+    <section class="mb-6 rounded-xl bg-zinc-900 border border-zinc-800 p-5">
+      <h2 class="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4">Profile</h2>
+      <form id="display-name-form" class="flex gap-2 items-end">
+        <div class="flex-1">
+          <label class="block text-xs text-zinc-500 mb-1" for="display-name-input">Display name</label>
+          <input id="display-name-input" type="text" maxlength="60" autocomplete="name"
+            class="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white placeholder-zinc-500 focus:outline-none focus:border-[--accent] text-sm"
+            placeholder="Your name" />
+        </div>
+        <button type="submit"
+          class="px-4 py-2 rounded-lg text-sm bg-zinc-700 hover:bg-zinc-600 text-white transition-colors shrink-0">
+          Save
+        </button>
+      </form>
+      <p id="display-name-status" class="text-xs mt-2 hidden"></p>
+    </section>
+
+    <!-- Password card -->
+    <section class="mb-6 rounded-xl bg-zinc-900 border border-zinc-800 p-5">
+      <h2 class="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4">Password</h2>
+      <form id="password-form" class="space-y-3">
+        <div>
+          <label class="block text-xs text-zinc-500 mb-1" for="pw-current">Current password</label>
+          <input id="pw-current" type="password" autocomplete="current-password" required
+            class="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white focus:outline-none focus:border-[--accent] text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs text-zinc-500 mb-1" for="pw-new">New password</label>
+          <input id="pw-new" type="password" autocomplete="new-password" minlength="8" required
+            class="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white focus:outline-none focus:border-[--accent] text-sm" />
+          <p class="text-zinc-600 text-xs mt-1">At least 8 characters</p>
+        </div>
+        <p id="pw-status" class="text-xs hidden"></p>
+        <button type="submit"
+          class="px-4 py-2 rounded-lg text-sm bg-zinc-700 hover:bg-zinc-600 text-white transition-colors">
+          Change password
+        </button>
+      </form>
+    </section>
+
+    <!-- Navigation visibility card -->
+    <section class="mb-6 rounded-xl bg-zinc-900 border border-zinc-800 p-5">
+      <h2 class="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-1">Navigation</h2>
+      <p class="text-xs text-zinc-600 mb-4">Hide items from the top nav bar. Affects only your view.</p>
+      <div class="space-y-3">
+        <label class="flex items-center gap-3 cursor-pointer group">
+          <input id="nav-hide-feed" type="checkbox" class="accent-[--accent]" />
+          <span class="text-sm text-zinc-300 group-hover:text-white transition-colors">Hide Feed</span>
+        </label>
+        <label class="flex items-center gap-3 cursor-pointer group">
+          <input id="nav-hide-community" type="checkbox" class="accent-[--accent]" />
+          <span class="text-sm text-zinc-300 group-hover:text-white transition-colors">Hide Community</span>
+        </label>
+        <label class="flex items-center gap-3 cursor-pointer group">
+          <input id="nav-hide-about" type="checkbox" class="accent-[--accent]" />
+          <span class="text-sm text-zinc-300 group-hover:text-white transition-colors">Hide About</span>
+        </label>
+      </div>
+      <p id="nav-prefs-status" class="text-xs mt-3 hidden"></p>
+    </section>
+
+    <!-- Strava credentials card -->
+    <section class="mb-6 rounded-xl bg-zinc-900 border border-zinc-800 p-5">
+      <h2 class="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-1">Strava API credentials</h2>
+      <p id="strava-creds-desc" class="text-xs text-zinc-600 mb-4">Loading…</p>
+      <form id="strava-creds-form" class="space-y-3">
+        <div>
+          <label class="block text-xs text-zinc-500 mb-1" for="strava-client-id">Client ID</label>
+          <input id="strava-client-id" type="text" autocomplete="off"
+            class="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white placeholder-zinc-500 focus:outline-none focus:border-[--accent] text-sm"
+            placeholder="123456" />
+        </div>
+        <div>
+          <label class="block text-xs text-zinc-500 mb-1" for="strava-client-secret">Client secret</label>
+          <input id="strava-client-secret" type="password" autocomplete="off"
+            class="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white placeholder-zinc-500 focus:outline-none focus:border-[--accent] text-sm"
+            placeholder="Leave blank to keep existing" />
+        </div>
+        <p id="strava-creds-status" class="text-xs hidden"></p>
+        <div class="flex gap-2">
+          <button type="submit"
+            class="px-4 py-2 rounded-lg text-sm bg-zinc-700 hover:bg-zinc-600 text-white transition-colors">
+            Save
+          </button>
+          <button type="button" id="strava-creds-clear"
+            class="px-4 py-2 rounded-lg text-sm bg-zinc-800 hover:bg-red-900 hover:text-red-300 text-zinc-400 transition-colors">
+            Use instance credentials
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Danger zone -->
+    <section class="rounded-xl bg-zinc-900 border border-red-900/40 p-5">
+      <h2 class="text-sm font-semibold text-red-400/70 uppercase tracking-wider mb-4">Danger zone</h2>
+
+      <!-- Delete original files -->
+      <div class="mb-5">
+        <p class="text-sm text-zinc-300 font-medium mb-1">Delete original files</p>
+        <p class="text-xs text-zinc-500 mb-3">Removes the raw source files kept for reprocessing (originals/). Your extracted activities, edits, and photos are not affected.</p>
+        <button id="del-originals-btn"
+          class="px-4 py-2 rounded-lg text-sm bg-zinc-800 hover:bg-amber-900 hover:text-amber-300 text-zinc-400 transition-colors">
+          Delete original files
+        </button>
+        <p id="del-originals-status" class="text-xs mt-2 hidden"></p>
+      </div>
+
+      <!-- Delete all activity data -->
+      <div class="border-t border-zinc-800 pt-5 mb-5">
+        <p class="text-sm text-zinc-300 font-medium mb-1">Delete all activity data</p>
+        <p class="text-xs text-zinc-500 mb-3">Wipes all extracted activities, edits, and photos. Your account and original files are kept. Cannot be undone.</p>
+        <button id="del-activities-btn"
+          class="px-4 py-2 rounded-lg text-sm bg-zinc-800 hover:bg-red-900 hover:text-red-300 text-zinc-400 transition-colors">
+          Delete all activities
+        </button>
+      </div>
+
+      <div class="border-t border-zinc-800 pt-5">
+        <p class="text-sm text-zinc-300 font-medium mb-1">Delete account</p>
+        <p class="text-xs text-zinc-500 mb-3">Permanently deletes your account and all data. Cannot be undone.</p>
+        <button id="del-account-btn"
+          class="px-4 py-2 rounded-lg text-sm bg-zinc-800 hover:bg-red-900 hover:text-red-300 text-zinc-400 transition-colors">
+          Delete account
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <!-- Confirmation modal (shared for activities + account deletion) -->
+  <dialog id="confirm-dialog"
+    class="rounded-xl bg-zinc-900 border border-zinc-700 p-6 text-white max-w-sm w-full backdrop:bg-black/60">
+    <p id="confirm-title" class="text-sm text-zinc-300 mb-1 font-medium"></p>
+    <p id="confirm-desc" class="text-xs text-zinc-500 mb-4"></p>
+    <div class="mb-4">
+      <label class="block text-xs text-zinc-500 mb-1" for="confirm-password">Confirm with your password</label>
+      <input id="confirm-password" type="password" autocomplete="current-password"
+        class="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white focus:outline-none focus:border-red-500 text-sm" />
+    </div>
+    <p id="confirm-error" class="text-red-400 text-xs mb-3 hidden"></p>
+    <div class="flex gap-3 justify-end">
+      <button id="confirm-cancel"
+        class="px-4 py-2 rounded-lg text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors">Cancel</button>
+      <button id="confirm-ok"
+        class="px-4 py-2 rounded-lg text-sm bg-red-700 hover:bg-red-600 text-white font-medium transition-colors">Confirm</button>
+    </div>
+  </dialog>
+</Base>
+
+<script>
+  function fmtMb(mb: number): string {
+    if (mb >= 1024) return (mb / 1024).toFixed(2) + ' GB';
+    if (mb >= 1)    return mb.toFixed(0) + ' MB';
+    return (mb * 1024).toFixed(0) + ' KB';
+  }
+
+  function setStatus(el: HTMLElement, msg: string, ok: boolean) {
+    el.textContent = msg;
+    el.style.color = ok ? '#4ade80' : '#f87171';
+    el.classList.remove('hidden');
+  }
+
+  // ── Storage ─────────────────────────────────────────────────────────────────
+
+  async function loadStorage() {
+    const loading = document.getElementById('storage-loading')!;
+    const content = document.getElementById('storage-content')!;
+    try {
+      const r = await fetch('/api/me/storage', { credentials: 'include' });
+      if (r.status === 401) { window.location.href = `/login/?next=/settings/`; return; }
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+
+      document.getElementById('st-activities')!.textContent =
+        `${fmtMb(d.activities_mb)} (${d.activities_count} activities)`;
+      document.getElementById('st-originals')!.textContent = fmtMb(d.originals_mb);
+      document.getElementById('st-images')!.textContent    = fmtMb(d.images_mb);
+      document.getElementById('st-total')!.textContent     = fmtMb(d.total_mb);
+
+      if (d.strava_originals_mb > 0) {
+        document.getElementById('st-strava')!.textContent =
+          `${fmtMb(d.strava_originals_mb)} (${d.strava_originals_count} files)`;
+        document.getElementById('st-strava-row')!.classList.remove('hidden');
+      }
+
+      loading.classList.add('hidden');
+      content.classList.remove('hidden');
+    } catch (e: any) {
+      loading.textContent = 'Could not load storage info.';
+    }
+  }
+
+  document.getElementById('del-originals-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('del-originals-btn') as HTMLButtonElement;
+    const statusEl = document.getElementById('del-originals-status')!;
+    if (!confirm('Delete all original files? The extracted activities are not affected.')) return;
+    btn.disabled = true;
+    btn.textContent = 'Deleting…';
+    try {
+      const r = await fetch('/api/me/originals', { method: 'DELETE', credentials: 'include' });
+      const d = await r.json();
+      if (r.ok) {
+        setStatus(statusEl, `Freed ${fmtMb(d.freed_mb)}.`, true);
+        btn.disabled = true;
+        btn.textContent = 'Already deleted';
+        loadStorage();
+      } else {
+        btn.disabled = false;
+        btn.textContent = 'Delete original files';
+        setStatus(statusEl, d.detail ?? 'Failed', false);
+      }
+    } catch {
+      btn.disabled = false;
+      btn.textContent = 'Delete original files';
+      setStatus(statusEl, 'Could not reach server', false);
+    }
+  });
+
+  // ── Display name ─────────────────────────────────────────────────────────────
+
+  async function loadMe() {
+    try {
+      const r = await fetch('/api/me', { credentials: 'include' });
+      if (!r.ok) return;
+      const d = await r.json();
+      (document.getElementById('display-name-input') as HTMLInputElement).value = d.display_name ?? '';
+    } catch {}
+  }
+
+  document.getElementById('display-name-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const statusEl = document.getElementById('display-name-status')!;
+    const val = (document.getElementById('display-name-input') as HTMLInputElement).value.trim();
+    try {
+      const r = await fetch('/api/me/display-name', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: val }),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        setStatus(statusEl, 'Saved.', true);
+        setTimeout(() => statusEl.classList.add('hidden'), 3000);
+      } else {
+        setStatus(statusEl, d.detail ?? 'Failed', false);
+      }
+    } catch {
+      setStatus(statusEl, 'Could not reach server', false);
+    }
+  });
+
+  // ── Password ─────────────────────────────────────────────────────────────────
+
+  document.getElementById('password-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const statusEl  = document.getElementById('pw-status')!;
+    const btn       = (e.target as HTMLFormElement).querySelector('button[type=submit]') as HTMLButtonElement;
+    const current   = (document.getElementById('pw-current') as HTMLInputElement).value;
+    const newPw     = (document.getElementById('pw-new')     as HTMLInputElement).value;
+    statusEl.classList.add('hidden');
+    btn.disabled = true;
+    try {
+      const r = await fetch('/api/me/password', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current_password: current, new_password: newPw }),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        setStatus(statusEl, 'Password changed.', true);
+        (document.getElementById('pw-current') as HTMLInputElement).value = '';
+        (document.getElementById('pw-new')     as HTMLInputElement).value = '';
+      } else {
+        setStatus(statusEl, d.detail ?? 'Failed', false);
+      }
+    } catch {
+      setStatus(statusEl, 'Could not reach server', false);
+    }
+    btn.disabled = false;
+  });
+
+  // ── Confirmation modal ────────────────────────────────────────────────────────
+
+  const dialog      = document.getElementById('confirm-dialog') as HTMLDialogElement;
+  const confirmTitle  = document.getElementById('confirm-title')!;
+  const confirmDesc   = document.getElementById('confirm-desc')!;
+  const confirmPw     = document.getElementById('confirm-password') as HTMLInputElement;
+  const confirmErr    = document.getElementById('confirm-error')!;
+  const confirmOk     = document.getElementById('confirm-ok') as HTMLButtonElement;
+  const confirmCancel = document.getElementById('confirm-cancel')!;
+
+  let pendingAction: 'activities' | 'account' | null = null;
+
+  function openConfirm(action: 'activities' | 'account') {
+    pendingAction = action;
+    confirmErr.classList.add('hidden');
+    confirmPw.value = '';
+    if (action === 'activities') {
+      confirmTitle.textContent = 'Delete all activity data?';
+      confirmDesc.textContent  = 'Removes all extracted activities, edits, and photos. Your account is kept.';
+    } else {
+      confirmTitle.textContent = 'Delete your account?';
+      confirmDesc.textContent  = 'Permanently deletes your account and all associated data. This cannot be undone.';
+    }
+    dialog.showModal();
+    setTimeout(() => confirmPw.focus(), 50);
+  }
+
+  confirmCancel.addEventListener('click', () => dialog.close());
+  dialog.addEventListener('click', e => { if (e.target === dialog) dialog.close(); });
+  dialog.addEventListener('keydown', e => { if (e.key === 'Escape') dialog.close(); });
+
+  confirmOk.addEventListener('click', async () => {
+    confirmErr.classList.add('hidden');
+    const password = confirmPw.value;
+    if (!password) {
+      confirmErr.textContent = 'Enter your password to confirm.';
+      confirmErr.classList.remove('hidden');
+      return;
+    }
+    confirmOk.disabled = true;
+    confirmOk.textContent = 'Working…';
+
+    const url   = pendingAction === 'account' ? '/api/me' : '/api/me/activities';
+    try {
+      const r = await fetch(url, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        dialog.close();
+        if (pendingAction === 'account') {
+          window.location.href = '/';
+        } else {
+          window.location.reload();
+        }
+      } else {
+        confirmErr.textContent = d.detail ?? 'Failed';
+        confirmErr.classList.remove('hidden');
+        confirmOk.disabled = false;
+        confirmOk.textContent = 'Confirm';
+      }
+    } catch {
+      confirmErr.textContent = 'Could not reach server';
+      confirmErr.classList.remove('hidden');
+      confirmOk.disabled = false;
+      confirmOk.textContent = 'Confirm';
+    }
+  });
+
+  document.getElementById('del-activities-btn')?.addEventListener('click', () => openConfirm('activities'));
+  document.getElementById('del-account-btn')?.addEventListener('click',    () => openConfirm('account'));
+
+  // ── Navigation prefs ─────────────────────────────────────────────────────────
+
+  const NAV_PREF_KEYS: Record<string, string> = {
+    'nav-hide-feed':      'nav_hide_feed',
+    'nav-hide-community': 'nav_hide_community',
+    'nav-hide-about':     'nav_hide_about',
+  };
+
+  async function loadNavPrefs() {
+    try {
+      const r = await fetch('/api/me/prefs', { credentials: 'include' });
+      if (!r.ok) return;
+      const prefs = await r.json();
+      for (const [elId, key] of Object.entries(NAV_PREF_KEYS)) {
+        const el = document.getElementById(elId) as HTMLInputElement | null;
+        if (el) el.checked = prefs[key] === 'true';
+      }
+    } catch {}
+  }
+
+  async function saveNavPref(key: string, value: boolean) {
+    const statusEl = document.getElementById('nav-prefs-status')!;
+    try {
+      const r = await fetch('/api/me/prefs', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [key]: String(value) }),
+      });
+      if (r.ok) {
+        setStatus(statusEl, 'Saved.', true);
+        setTimeout(() => statusEl.classList.add('hidden'), 2000);
+      } else {
+        const d = await r.json();
+        setStatus(statusEl, d.detail ?? 'Failed', false);
+      }
+    } catch {
+      setStatus(statusEl, 'Could not reach server', false);
+    }
+  }
+
+  for (const [elId, key] of Object.entries(NAV_PREF_KEYS)) {
+    document.getElementById(elId)?.addEventListener('change', (e) => {
+      saveNavPref(key, (e.target as HTMLInputElement).checked);
+    });
+  }
+
+  // ── Strava credentials ────────────────────────────────────────────────────────
+
+  async function loadStravaCreds() {
+    const desc = document.getElementById('strava-creds-desc')!;
+    try {
+      const r = await fetch('/api/me/strava-credentials', { credentials: 'include' });
+      if (!r.ok) { desc.textContent = 'Not available.'; return; }
+      const d = await r.json();
+      if (d.has_user_creds) {
+        desc.textContent = `Using your own credentials (Client ID: ${d.client_id}).`;
+        (document.getElementById('strava-client-id') as HTMLInputElement).value = d.client_id ?? '';
+      } else if (d.instance_configured) {
+        desc.textContent = 'Using instance-level credentials. Enter your own below to override.';
+      } else {
+        desc.textContent = 'Strava is not configured on this instance. You can set your own API credentials below.';
+      }
+    } catch {
+      desc.textContent = 'Could not load Strava settings.';
+    }
+  }
+
+  document.getElementById('strava-creds-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const statusEl = document.getElementById('strava-creds-status')!;
+    const clientId     = (document.getElementById('strava-client-id')     as HTMLInputElement).value.trim();
+    const clientSecret = (document.getElementById('strava-client-secret') as HTMLInputElement).value.trim();
+    if (!clientId) {
+      setStatus(statusEl, 'Client ID is required.', false);
+      return;
+    }
+    try {
+      const body: Record<string, string> = { client_id: clientId };
+      if (clientSecret) body.client_secret = clientSecret;
+      const r = await fetch('/api/me/strava-credentials', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        setStatus(statusEl, 'Saved.', true);
+        (document.getElementById('strava-client-secret') as HTMLInputElement).value = '';
+        loadStravaCreds();
+      } else {
+        setStatus(statusEl, d.detail ?? 'Failed', false);
+      }
+    } catch {
+      setStatus(statusEl, 'Could not reach server', false);
+    }
+  });
+
+  document.getElementById('strava-creds-clear')?.addEventListener('click', async () => {
+    const statusEl = document.getElementById('strava-creds-status')!;
+    if (!confirm('Remove your custom Strava credentials and fall back to instance credentials?')) return;
+    try {
+      const r = await fetch('/api/me/strava-credentials', { method: 'DELETE', credentials: 'include' });
+      if (r.ok) {
+        setStatus(statusEl, 'Cleared — using instance credentials.', true);
+        (document.getElementById('strava-client-id')     as HTMLInputElement).value = '';
+        (document.getElementById('strava-client-secret') as HTMLInputElement).value = '';
+        loadStravaCreds();
+      } else {
+        const d = await r.json();
+        setStatus(statusEl, d.detail ?? 'Failed', false);
+      }
+    } catch {
+      setStatus(statusEl, 'Could not reach server', false);
+    }
+  });
+
+  // ── Init ─────────────────────────────────────────────────────────────────────
+
+  loadMe();
+  loadStorage();
+  loadNavPrefs();
+  loadStravaCreds();
+</script>

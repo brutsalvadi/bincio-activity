@@ -1,0 +1,17 @@
+---
+/**
+ * Legacy route — redirects to /u/{handle}/athlete/
+ */
+import { readShardHandles } from '../../lib/manifest';
+const base = import.meta.env.BASE_URL;
+const shards = readShardHandles();
+const handle = shards[0]?.handle ?? null;
+---
+{handle ? (
+  <meta http-equiv="refresh" content={`0;url=${base}u/${handle}/athlete/`} />
+  <script define:vars={{ base, handle }}>
+    window.location.replace(base + 'u/' + handle + '/athlete/');
+  </script>
+) : (
+  <p>No data found. Upload activities to get started.</p>
+)}

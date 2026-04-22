@@ -1,0 +1,22 @@
+---
+import Base from '../layouts/Base.astro';
+import ActivityFeed from '../components/ActivityFeed.svelte';
+import { readShardHandles, isInstancePrivate } from '../lib/manifest';
+
+const base = import.meta.env.BASE_URL;
+const shards = readShardHandles();
+const isSingleUser = shards.length === 1 && !isInstancePrivate();
+const singleHandle = isSingleUser ? shards[0].handle : null;
+---
+{isSingleUser ? (
+  <!-- Single-user: redirect / → /u/{handle}/ -->
+  <meta http-equiv="refresh" content={`0;url=${base}u/${singleHandle}/`} />
+  <script define:vars={{ base, singleHandle }}>
+    window.location.replace(base + 'u/' + singleHandle + '/');
+  </script>
+) : (
+  <Base title="BincioActivity — Feed">
+    <h1 class="text-2xl font-bold text-white mb-6">Feed</h1>
+    <ActivityFeed {base} client:only="svelte" />
+  </Base>
+)}
