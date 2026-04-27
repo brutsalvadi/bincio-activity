@@ -49,6 +49,37 @@ try {
     document.documentElement.setAttribute('data-theme', t);
   </script>
 
+  <!-- Race-calendar palette: auto-switches accent colour during Grand Tours -->
+  <script is:inline>
+    (function () {
+      var palettes = {
+        default: { accent: '#60a5fa', dim: 'rgba(96,165,250,0.15)'  },
+        giro:    { accent: '#f472b6', dim: 'rgba(244,114,182,0.15)' },
+        tour:    { accent: '#facc15', dim: 'rgba(250,204,21,0.15)'  },
+        vuelta:  { accent: '#ef4444', dim: 'rgba(239,68,68,0.15)'   },
+      };
+      // [month 0-indexed, day] inclusive — update each year
+      var races = [
+        { key: 'giro',   start: [4, 8],  end: [5, 1]  },
+        { key: 'tour',   start: [5, 27], end: [6, 19] },
+        { key: 'vuelta', start: [7, 15], end: [8, 6]  },
+      ];
+      function autoKey() {
+        var now = new Date(), y = now.getFullYear();
+        for (var i = 0; i < races.length; i++) {
+          var r = races[i];
+          if (now >= new Date(y, r.start[0], r.start[1]) &&
+              now <  new Date(y, r.end[0],   r.end[1] + 1)) return r.key;
+        }
+        return 'default';
+      }
+      var key = autoKey();
+      var p   = palettes[key] || palettes.default;
+      document.documentElement.style.setProperty('--accent',     p.accent);
+      document.documentElement.style.setProperty('--accent-dim', p.dim);
+    })();
+  </script>
+
   <!-- Reload on bfcache restore so client:only components re-mount -->
   <script is:inline>
     window.addEventListener('pageshow', function(e) {
@@ -88,8 +119,8 @@ try {
       --text-5:       #71717a;  /* zinc-500 */
       --border:       #27272a;  /* zinc-800 */
       --border-sub:   #3f3f46;  /* zinc-700 */
-      --accent:       #00c8ff;
-      --accent-dim:   rgba(0,200,255,0.15);
+      --accent:       #60a5fa;
+      --accent-dim:   rgba(96,165,250,0.15);
     }
 
     [data-theme="light"] {

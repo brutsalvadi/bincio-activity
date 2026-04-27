@@ -1,0 +1,18 @@
+node_modules/
+.expo/
+dist/
+npm-debug.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+
+# Generated native projects (managed workflow — produced by EAS, not committed)
+android/
+ios/
+
+# Local env overrides
+.env.local

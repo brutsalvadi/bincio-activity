@@ -14,9 +14,23 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import threading
 from pathlib import Path
 
 import yaml
+
+# Per-user-directory lock so concurrent upload requests and the dev file-watcher
+# cannot run merge_all simultaneously on the same directory.
+_merge_locks: dict[str, threading.Lock] = {}
+_merge_locks_mu = threading.Lock()
+
+
+def _merge_lock(data_dir: Path) -> threading.Lock:
+    key = str(data_dir.resolve())
+    with _merge_locks_mu:
+        if key not in _merge_locks:
+            _merge_locks[key] = threading.Lock()
+        return _merge_locks[key]
 
 
 def parse_sidecar(path: Path) -> tuple[dict, str]:
@@ -84,6 +98,11 @@ def merge_one(data_dir: Path, activity_id: str) -> None:
 
     Use merge_all() for bulk operations (first run, Strava sync, etc.).
     """
+    with _merge_lock(data_dir):
+        _merge_one_locked(data_dir, activity_id)
+
+
+def _merge_one_locked(data_dir: Path, activity_id: str) -> None:
     edits_dir  = data_dir / "edits"
     acts_dir   = data_dir / "activities"
     merged_dir = data_dir / "_merged"
@@ -163,6 +182,11 @@ def merge_all(data_dir: Path) -> int:
 
     Returns the number of sidecars found and applied.
     """
+    with _merge_lock(data_dir):
+        return _merge_all_locked(data_dir)
+
+
+def _merge_all_locked(data_dir: Path) -> int:
     edits_dir = data_dir / "edits"
     acts_dir = data_dir / "activities"
     merged_dir = data_dir / "_merged"
@@ -191,9 +215,8 @@ def merge_all(data_dir: Path) -> int:
     to_merge = set(sidecars) | set(image_lists)
 
     # Wipe and recreate _merged/activities/
-    if merged_acts.exists():
-        shutil.rmtree(merged_acts)
-    merged_acts.mkdir(parents=True)
+    shutil.rmtree(merged_acts, ignore_errors=True)
+    merged_acts.mkdir(parents=True, exist_ok=True)
 
     # Mirror activities/ — symlink unmodified, write merged copies for overridden
     if acts_dir.exists():
@@ -212,7 +235,8 @@ def merge_all(data_dir: Path) -> int:
                     detail["custom"]["images"] = image_lists[activity_id]
                 dest.write_text(json.dumps(detail, indent=2, ensure_ascii=False))
             else:
-                dest.symlink_to(src.resolve())
+                if not dest.exists() and not dest.is_symlink():
+                    dest.symlink_to(src.resolve())
 
     # Mirror edits/images/ → _merged/activities/images/ so the site can serve them
     if images_root and images_root.exists():
@@ -292,7 +316,7 @@ def _write_year_shards(merged_dir: Path, activities: list[dict], index_meta: dic
 
     # Remove stale year shard files from previous runs
     for f in merged_dir.glob("index-*.json"):
-        f.unlink()
+        f.unlink(missing_ok=True)
 
     by_year: dict[str, list[dict]] = defaultdict(list)
     for a in activities:
@@ -379,7 +403,7 @@ def write_combined_feed(data_dir: Path) -> int:
 
     # Remove stale feed pages
     for f in data_dir.glob("feed*.json"):
-        f.unlink()
+        f.unlink(missing_ok=True)
 
     if not all_activities:
         return 0

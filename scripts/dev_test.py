@@ -11,12 +11,15 @@ Run from the project root:
 Options:
     --fresh    Wipe DATA_DIR before starting (default: reuse if it exists)
     --no-dev   Stop after extract (skip `bincio dev`)
+    --mobile   Bind API to 0.0.0.0 for mobile app testing on the same WiFi
 
 Credentials:  dave / testpass  and  brut / testpass
 URL:          http://localhost:4321
 """
 
 import argparse
+import platform
+import resource
 import shutil
 import subprocess
 import sys
@@ -139,7 +142,7 @@ def prepare_serve() -> None:
 
 # ── 4. Hand off to bincio dev ─────────────────────────────────────────────────
 
-def start_dev() -> None:
+def start_dev(mobile: bool = False) -> None:
     section("Starting bincio dev")
     print()
     print("  \033[1mCredentials\033[0m")
@@ -150,23 +153,39 @@ def start_dev() -> None:
     print()
     print("  Press Ctrl+C to stop.\n")
 
+    cmd = ["uv", "run", "bincio", "dev", "--data-dir", str(DATA_DIR)]
+    if mobile:
+        cmd += ["--api-host", "0.0.0.0"]
+
     try:
-        subprocess.run(
-            ["uv", "run", "bincio", "dev", "--data-dir", str(DATA_DIR)],
-            cwd=PROJECT_DIR,
-        )
+        subprocess.run(cmd, cwd=PROJECT_DIR)
     except KeyboardInterrupt:
         pass
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
+def raise_open_file_limit() -> None:
+    # Astro's file watcher opens many handles; macOS defaults to 256, which
+    # causes EMFILE errors under a large project tree.
+    if platform.system() != "Darwin":
+        return
+    target = 65536
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if soft < target:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (min(target, hard), hard))
+        ok(f"open-file limit raised to {min(target, hard)}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--fresh",  action="store_true", help="Wipe DATA_DIR before starting")
     parser.add_argument("--no-dev", action="store_true", help="Stop after extract, skip bincio dev")
+    parser.add_argument("--mobile", action="store_true", help="Bind API to 0.0.0.0 for local mobile testing")
     args = parser.parse_args()
+
+    raise_open_file_limit()
 
     print(f"\033[1mbincio dev test\033[0m  →  {DATA_DIR}")
 
@@ -181,7 +200,7 @@ def main() -> None:
     prepare_serve()
 
     if not args.no_dev:
-        start_dev()
+        start_dev(mobile=args.mobile)
     else:
         print(f"\n\033[32mDone.\033[0m  Data ready at {DATA_DIR}")
         print(f"Run:  uv run bincio dev --data-dir {DATA_DIR}\n")

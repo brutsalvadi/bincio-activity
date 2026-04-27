@@ -11,7 +11,7 @@ from typing import Any
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
 from bincio.edit.ops import SPORTS, STAT_PANELS, VALID_ACTIVITY_ID
 
@@ -465,6 +465,37 @@ async def recalculate_elevation_hysteresis_endpoint(activity_id: str) -> JSONRes
         raise HTTPException(404, str(e))
     except ValueError as e:
         raise HTTPException(422, str(e))
+
+
+@app.get("/api/wheel/version")
+async def wheel_version() -> JSONResponse:
+    """Public endpoint: current bincio wheel version for mobile app update checks."""
+    import importlib.metadata
+    try:
+        version = importlib.metadata.version("bincio")
+    except importlib.metadata.PackageNotFoundError:
+        version = "0.1.0"
+    return JSONResponse({
+        "version": version,
+        "url": f"/bincio-{version}-py3-none-any.whl",
+        "api_url": "/api/wheel/download",
+    })
+
+
+@app.get("/api/wheel/download")
+async def wheel_download() -> FileResponse:
+    """Serve the bincio wheel directly (used locally; in prod nginx serves /bincio-*.whl)."""
+    import importlib.metadata
+    try:
+        version = importlib.metadata.version("bincio")
+    except importlib.metadata.PackageNotFoundError:
+        version = "0.1.0"
+    wheel_name = f"bincio-{version}-py3-none-any.whl"
+    dist_dir = Path(__file__).parent.parent.parent / "dist"
+    wheel_path = dist_dir / wheel_name
+    if not wheel_path.exists():
+        raise HTTPException(status_code=404, detail=f"{wheel_name} not found in dist/")
+    return FileResponse(wheel_path, media_type="application/zip", filename=wheel_name)
 
 
 @app.post("/api/activity/{activity_id}/images")
