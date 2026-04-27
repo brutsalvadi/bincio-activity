@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "Bincio",
+    "slug": "bincio",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "bincio",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "platforms": ["ios", "android"],
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#09090b"
+    },
+    "android": {
+      "package": "org.bincio.app",
+      "usesCleartextTraffic": true,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#09090b"
+      },
+      "permissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
+    },
+    "ios": {
+      "bundleIdentifier": "org.bincio.app",
+      "supportsTablet": true
+    },
+    "plugins": [
+      "expo-system-ui",
+      "expo-router",
+      "expo-sqlite",
+      [
+        "expo-document-picker",
+        { "iCloudContainerEnvironment": "Production" }
+      ],
+      "expo-background-fetch",
+      "expo-task-manager",
+      "@maplibre/maplibre-react-native"
+    ]
+  }
+}

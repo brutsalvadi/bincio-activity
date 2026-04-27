@@ -22,8 +22,8 @@ from typing import Any, Optional
 
 log = logging.getLogger("bincio.serve")
 
-from fastapi import Cookie, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
@@ -281,6 +281,24 @@ def _require_admin(bincio_session: Optional[str] = Cookie(default=None)) -> User
     return user
 
 
+def _require_auth(
+    request: Request,
+    bincio_session: Optional[str] = Cookie(default=None),
+) -> User:
+    """Accept session cookie (web) OR Authorization: Bearer token (mobile)."""
+    token = bincio_session
+    if not token:
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            token = auth[7:]
+    if not token:
+        raise HTTPException(401, "Not authenticated")
+    user = get_session(_get_db(), token)
+    if not user:
+        raise HTTPException(401, "Invalid or expired session")
+    return user
+
+
 def _set_session_cookie(response: Response, token: str) -> None:
     response.set_cookie(
         key=_SESSION_COOKIE,
@@ -437,6 +455,312 @@ async def stats() -> JSONResponse:
     })
 
 
+@app.get("/api/activity/{activity_id}/geojson")
+async def get_activity_geojson(
+    activity_id: str,
+    user: User = Depends(_require_auth),
+) -> JSONResponse:
+    """Return GeoJSON track for an activity (mobile detail screen)."""
+    _check_id(activity_id)
+    dd = _get_data_dir()
+    user_dir = dd / user.handle
+    for base in (user_dir / "_merged" / "activities", user_dir / "activities"):
+        p = base / f"{activity_id}.geojson"
+        if p.exists():
+            return JSONResponse(json.loads(p.read_text()))
+    raise HTTPException(404, "GeoJSON not found")
+
+
+@app.get("/api/activity/{activity_id}/timeseries")
+async def get_activity_timeseries(
+    activity_id: str,
+    user: User = Depends(_require_auth),
+) -> JSONResponse:
+    """Return timeseries for an activity (mobile detail screen)."""
+    _check_id(activity_id)
+    dd = _get_data_dir()
+    user_dir = dd / user.handle
+    for base in (user_dir / "_merged" / "activities", user_dir / "activities"):
+        p = base / f"{activity_id}.timeseries.json"
+        if p.exists():
+            return JSONResponse(json.loads(p.read_text()))
+    raise HTTPException(404, "Timeseries not found")
+
+
+def _upsert_index_summary(user_dir: Path, activity_id: str, activity: dict, geojson: Optional[dict] = None) -> None:
+    """Add or update an activity summary in user_dir/index.json.
+
+    Called after writing BAS activity files so that merge_all can include the
+    activity in year shards.  Without this, uploaded activities exist on disk
+    but never appear in the browser feed.
+    """
+    # Build preview coords from geojson if available ([lat, lng] order)
+    preview: Optional[list] = None
+    if geojson:
+        try:
+            coords = geojson.get("geometry", {}).get("coordinates", [])
+            if coords:
+                step = max(1, len(coords) // 9)
+                preview = [[c[1], c[0]] for c in coords[::step]][:9]
+        except Exception:
+            pass
+
+    has_track = (user_dir / "activities" / f"{activity_id}.geojson").exists()
+    summary = {
+        "id": activity_id,
+        "title": activity.get("title", activity_id),
+        "sport": activity.get("sport"),
+        "sub_sport": activity.get("sub_sport"),
+        "started_at": activity.get("started_at"),
+        "distance_m": activity.get("distance_m"),
+        "duration_s": activity.get("duration_s"),
+        "moving_time_s": activity.get("moving_time_s"),
+        "elevation_gain_m": activity.get("elevation_gain_m"),
+        "avg_speed_kmh": activity.get("avg_speed_kmh"),
+        "max_speed_kmh": activity.get("max_speed_kmh"),
+        "avg_hr_bpm": activity.get("avg_hr_bpm"),
+        "max_hr_bpm": activity.get("max_hr_bpm"),
+        "avg_cadence_rpm": activity.get("avg_cadence_rpm"),
+        "avg_power_w": activity.get("avg_power_w"),
+        "mmp": activity.get("mmp"),
+        "best_efforts": activity.get("best_efforts"),
+        "best_climb_m": activity.get("best_climb_m"),
+        "source": activity.get("source"),
+        "privacy": activity.get("privacy", "public"),
+        "detail_url": f"activities/{activity_id}.json",
+        "track_url": f"activities/{activity_id}.geojson" if has_track else None,
+        "preview_coords": preview,
+    }
+
+    index_path = user_dir / "index.json"
+    if index_path.exists():
+        index_data = json.loads(index_path.read_text(encoding="utf-8"))
+    else:
+        index_data = {
+            "bas_version": "1.0",
+            "owner": {"handle": user_dir.name},
+            "generated_at": None,
+            "activities": [],
+        }
+    existing = {a["id"]: a for a in index_data.get("activities", [])}
+    existing[activity_id] = summary
+    index_data["activities"] = sorted(existing.values(), key=lambda a: a.get("started_at", ""), reverse=True)
+    index_path.write_text(json.dumps(index_data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+@app.post("/api/upload/bas")
+async def upload_bas_activity(
+    request: Request,
+    bincio_session: Optional[str] = Cookie(default=None),
+) -> JSONResponse:
+    """Accept a pre-extracted BAS activity JSON from the mobile app.
+
+    Body (JSON):
+      activity   – full BAS activity dict (required, must have 'id')
+      timeseries – timeseries dict (optional)
+      geojson    – GeoJSON dict (optional)
+
+    Returns:
+      {"ok": true, "id": "...", "status": "imported" | "duplicate"}
+    """
+    user = _require_auth(request, bincio_session)
+    body = await request.json()
+
+    activity = body.get("activity")
+    if not activity or not activity.get("id"):
+        raise HTTPException(400, "Missing activity.id")
+
+    activity_id = str(activity["id"])
+    _check_id(activity_id)
+
+    user_dir = _get_data_dir() / user.handle
+    acts_dir = user_dir / "activities"
+    acts_dir.mkdir(parents=True, exist_ok=True)
+
+    out = acts_dir / f"{activity_id}.json"
+    if out.exists():
+        return JSONResponse({"ok": True, "id": activity_id, "status": "duplicate"})
+
+    out.write_text(json.dumps(activity, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    if body.get("timeseries"):
+        ts_path = acts_dir / f"{activity_id}.timeseries.json"
+        if not ts_path.exists():
+            ts_path.write_text(json.dumps(body["timeseries"], ensure_ascii=False), encoding="utf-8")
+
+    geojson_body: Optional[dict] = body.get("geojson") or None
+    if geojson_body:
+        gj_path = acts_dir / f"{activity_id}.geojson"
+        if not gj_path.exists():
+            gj_path.write_text(json.dumps(geojson_body, ensure_ascii=False), encoding="utf-8")
+
+    _upsert_index_summary(user_dir, activity_id, activity, geojson_body)
+
+    try:
+        from bincio.render.merge import merge_one, write_combined_feed
+        merge_one(user_dir, activity_id)
+        write_combined_feed(_get_data_dir())
+    except Exception as exc:
+        log.warning("upload/bas[%s]: merge/feed failed (non-fatal): %s", user.handle, exc)
+
+    log.info("upload/bas[%s]: imported %s", user.handle, activity_id)
+    return JSONResponse({"ok": True, "id": activity_id, "status": "imported"})
+
+
+@app.post("/api/upload/raw")
+async def upload_raw_activity(
+    request: Request,
+    bincio_session: Optional[str] = Cookie(default=None),
+) -> JSONResponse:
+    """Accept a raw FIT/GPX file (base64-encoded) from the mobile app, extract it
+    server-side, store it in the user's activity library, and return the full
+    extracted data so the mobile can cache it locally.
+
+    Used when the device WebView is too old to run Pyodide (e.g. Karoo / Chrome <69).
+
+    Body (JSON):
+      filename  – original filename (used only to determine file extension)
+      base64    – base64-encoded raw file bytes
+
+    Auth: Authorization: Bearer <token>
+
+    Returns:
+      {"ok": true, "id": "...", "detail": {...}, "timeseries": {...}|null,
+       "geojson": {...}|null, "source_hash": "<sha256-hex>"}
+    """
+    import base64 as _b64
+    import hashlib
+
+    user = _require_auth(request, bincio_session)
+
+    body = await request.json()
+    filename_hint: str = body.get("filename") or "activity.fit"
+    b64: str = body.get("base64") or ""
+    user_title: Optional[str] = body.get("user_title") or None
+    if not b64:
+        raise HTTPException(400, "Missing base64 field")
+
+    try:
+        raw = _b64.b64decode(b64)
+    except Exception:
+        raise HTTPException(400, "Invalid base64 encoding")
+
+    source_hash = hashlib.sha256(raw).hexdigest()
+
+    suffix = Path(filename_hint).suffix or ".fit"
+    tmp_in = Path(f"/tmp/bincio_raw_{uuid.uuid4()}{suffix}")
+    tmp_out = Path(f"/tmp/bincio_out_{uuid.uuid4()}")
+    try:
+        tmp_in.write_bytes(raw)
+        tmp_out.mkdir()
+
+        from bincio.extract.parsers.factory import parse_file
+        from bincio.extract.metrics import compute
+        from bincio.extract.writer import make_activity_id, write_activity
+        from bincio.extract.timeseries import build_timeseries
+
+        activity = parse_file(tmp_in)
+        metrics = compute(activity)
+        write_activity(activity, metrics, tmp_out, privacy="public", rdp_epsilon=0.0001)
+        act_id = make_activity_id(activity)
+
+        acts_tmp = tmp_out / "activities"
+        detail_path  = acts_tmp / f"{act_id}.json"
+        ts_path      = acts_tmp / f"{act_id}.timeseries.json"
+        geojson_path = acts_tmp / f"{act_id}.geojson"
+
+        if not ts_path.exists():
+            ts_data = build_timeseries(activity.points, activity.started_at, "public")
+            if ts_data.get("t"):
+                ts_path.write_text(json.dumps(ts_data))
+
+        detail     = json.loads(detail_path.read_text())
+        timeseries = json.loads(ts_path.read_text()) if ts_path.exists() else None
+        geojson    = json.loads(geojson_path.read_text()) if geojson_path.exists() else None
+
+        # Also store on the server so the activity appears in the user's feed.
+        user_dir = _get_data_dir() / user.handle
+        acts_dir = user_dir / "activities"
+        acts_dir.mkdir(parents=True, exist_ok=True)
+        out = acts_dir / f"{act_id}.json"
+        if not out.exists():
+            out.write_text(json.dumps(detail, ensure_ascii=False, indent=2), encoding="utf-8")
+        if timeseries and not (acts_dir / f"{act_id}.timeseries.json").exists():
+            (acts_dir / f"{act_id}.timeseries.json").write_text(json.dumps(timeseries), encoding="utf-8")
+        if geojson and not (acts_dir / f"{act_id}.geojson").exists():
+            (acts_dir / f"{act_id}.geojson").write_text(json.dumps(geojson), encoding="utf-8")
+
+        _upsert_index_summary(user_dir, act_id, detail, geojson)
+
+        if user_title:
+            import yaml as _yaml
+            edits_dir = user_dir / "edits"
+            edits_dir.mkdir(parents=True, exist_ok=True)
+            (edits_dir / f"{act_id}.md").write_text(
+                f"---\n{_yaml.dump({'title': user_title}, allow_unicode=True)}---\n",
+                encoding="utf-8",
+            )
+
+    except Exception as exc:
+        log.warning("upload/raw[%s]: extraction failed: %s", user.handle, exc)
+        raise HTTPException(422, f"Could not extract activity: {exc}") from exc
+    finally:
+        tmp_in.unlink(missing_ok=True)
+        shutil.rmtree(tmp_out, ignore_errors=True)
+
+    # Merge and update feed — best effort; a race or transient FS error here must
+    # not turn a successful extraction into a 422 (the file is on disk; the mobile
+    # would retry indefinitely and the activity would never be marked synced).
+    try:
+        from bincio.render.merge import merge_one, write_combined_feed
+        merge_one(user_dir, act_id)
+        write_combined_feed(_get_data_dir())
+    except Exception as exc:
+        log.warning("upload/raw[%s]: merge/feed failed (non-fatal): %s", user.handle, exc)
+
+    log.info("upload/raw[%s]: imported %s", user.handle, act_id)
+    return JSONResponse({
+        "ok": True,
+        "id": act_id,
+        "detail": detail,
+        "timeseries": timeseries,
+        "geojson": geojson,
+        "source_hash": source_hash,
+    })
+
+
+@app.get("/api/wheel/version")
+async def wheel_version() -> JSONResponse:
+    """Public endpoint: current bincio wheel version for mobile app update checks."""
+    import importlib.metadata
+    try:
+        version = importlib.metadata.version("bincio")
+    except importlib.metadata.PackageNotFoundError:
+        version = "0.1.0"
+    return JSONResponse({
+        "version": version,
+        "url": f"/bincio-{version}-py3-none-any.whl",
+        "api_url": f"/api/wheel/download",
+    })
+
+
+@app.get("/api/wheel/download")
+async def wheel_download() -> FileResponse:
+    """Serve the bincio wheel directly (used locally; in prod nginx serves /bincio-*.whl)."""
+    import importlib.metadata
+    try:
+        version = importlib.metadata.version("bincio")
+    except importlib.metadata.PackageNotFoundError:
+        version = "0.1.0"
+    wheel_name = f"bincio-{version}-py3-none-any.whl"
+    # Look in dist/ relative to repo root (two levels up from this file)
+    dist_dir = Path(__file__).parent.parent.parent / "dist"
+    wheel_path = dist_dir / wheel_name
+    if not wheel_path.exists():
+        raise HTTPException(status_code=404, detail=f"{wheel_name} not found in dist/")
+    return FileResponse(wheel_path, media_type="application/zip", filename=wheel_name)
+
+
 @app.post("/api/auth/login", response_model=LoginResponse)
 async def login(
     login_req: LoginRequest,
@@ -465,6 +789,47 @@ async def logout(bincio_session: Optional[str] = Cookie(default=None)) -> JSONRe
     resp = JSONResponse({"ok": True})
     resp.delete_cookie(_SESSION_COOKIE)
     return resp
+
+
+@app.post("/api/auth/token")
+async def get_token(login_req: LoginRequest, request: Request) -> JSONResponse:
+    """Mobile auth: same as /api/auth/login but returns the token in the body instead of a cookie."""
+    ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(ip, _login_attempts, _LOGIN_RATE_LIMIT, "Too many login attempts. Try again later.")
+    handle = login_req.handle.strip().lower()
+    user = authenticate(_get_db(), handle, login_req.password)
+    if not user:
+        raise HTTPException(401, "Invalid credentials")
+    token = create_session(_get_db(), handle)
+    return JSONResponse({
+        "ok": True,
+        "token": token,
+        "handle": user.handle,
+        "display_name": user.display_name,
+    })
+
+
+@app.get("/api/feed")
+async def get_feed(user: User = Depends(_require_auth)) -> JSONResponse:
+    """Return the authenticated user's activity summaries (mobile feed sync).
+
+    _merged/index.json is a shard manifest (activities: []) when the user has
+    more than FEED_PAGE_SIZE activities.  Collect from all shard files.
+    """
+    dd = _get_data_dir()
+    user_dir = dd / user.handle
+    for index_path in (user_dir / "_merged" / "index.json", user_dir / "index.json"):
+        if not index_path.exists():
+            continue
+        index = json.loads(index_path.read_text())
+        activities: list[dict] = index.get("activities", [])
+        for shard in index.get("shards", []):
+            shard_path = index_path.parent / shard["url"]
+            if shard_path.exists():
+                shard_doc = json.loads(shard_path.read_text())
+                activities.extend(shard_doc.get("activities", []))
+        return JSONResponse({"activities": activities})
+    return JSONResponse({"activities": []})
 
 
 @app.post("/api/auth/reset-password", response_model=GenericResponse)

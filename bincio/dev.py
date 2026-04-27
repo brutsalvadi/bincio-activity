@@ -7,6 +7,8 @@ foreground. One command replaces the two-terminal setup.
 from __future__ import annotations
 
 import os
+import platform
+import resource
 import subprocess
 import sys
 import threading
@@ -64,11 +66,24 @@ def _user_dirs(data: Path) -> list[Path]:
 
 def _merge_all_users(data: Path) -> None:
     from bincio.render.cli import _merge_edits, _write_root_manifest
+    from bincio.render.merge import write_combined_feed
     _merge_edits(data)
     _write_root_manifest(data)
+    write_combined_feed(data)
 
 
-def _start_serve(data: Path, api_port: int, site: Path) -> None:
+def _local_ip() -> str:
+    """Return the machine's primary LAN IP (best-effort)."""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
+
+
+def _start_serve(data: Path, api_port: int, site: Path, api_host: str = "127.0.0.1") -> None:
     """Start bincio serve in a background thread."""
     import uvicorn
     import bincio.serve.server as srv
@@ -78,7 +93,7 @@ def _start_serve(data: Path, api_port: int, site: Path) -> None:
 
     config = uvicorn.Config(
         srv.app,
-        host="127.0.0.1",
+        host=api_host,
         port=api_port,
         log_level="warning",   # quiet — astro dev output takes priority
     )
@@ -126,6 +141,11 @@ def _watch_data(data: Path) -> None:
                 continue
             for prefix, user_dir in prefix_to_user.items():
                 if path.startswith(prefix):
+                    # Skip new-activity .json writes in activities/ — the upload
+                    # endpoint calls merge_one inline, so firing merge_all here
+                    # too would cause O(N²) full rebuilds during bulk uploads.
+                    if path.startswith(str(user_dir / "activities")) and path.endswith(".json"):
+                        break
                     affected.add(user_dir)
                     break
 
@@ -135,8 +155,9 @@ def _watch_data(data: Path) -> None:
         for user_dir in affected:
             handle = user_dir.name
             try:
-                from bincio.render.merge import merge_all
+                from bincio.render.merge import merge_all, write_combined_feed
                 merge_all(user_dir)
+                write_combined_feed(data)
                 console.print(f"  [dim]↺  {handle}: merged[/dim]")
             except Exception as exc:
                 console.print(f"  [yellow]⚠  {handle}: merge failed — {exc}[/yellow]")
@@ -147,11 +168,14 @@ def _watch_data(data: Path) -> None:
 @click.option("--site-dir", default=None, help="Astro project directory (default: ./site)")
 @click.option("--port", default=4321, show_default=True, help="Astro dev server port")
 @click.option("--api-port", default=4041, show_default=True, help="bincio serve API port")
+@click.option("--api-host", default="127.0.0.1", show_default=True,
+              help="Host for bincio serve. Use 0.0.0.0 to expose on the local network for mobile testing.")
 def dev(
     data_dir: Optional[str],
     site_dir: Optional[str],
     port: int,
     api_port: int,
+    api_host: str,
 ) -> None:
     """Start the local dev environment: bincio serve + astro dev.
 
@@ -169,11 +193,16 @@ def dev(
 
     has_auth = (data / "instance.db").exists()
 
+    lan_ip = _local_ip() if api_host == "0.0.0.0" else api_host
+    mobile_url = f"http://{lan_ip}:{api_port}" if api_host == "0.0.0.0" else None
+
     console.print(f"[bold]bincio dev[/bold]")
     console.print(f"  Data:    [cyan]{data}[/cyan]")
     console.print(f"  Site:    [cyan]{site}[/cyan]")
     if has_auth:
-        console.print(f"  API:     [cyan]http://127.0.0.1:{api_port}[/cyan]")
+        console.print(f"  API:     [cyan]http://{api_host}:{api_port}[/cyan]")
+        if mobile_url:
+            console.print(f"  Mobile:  [bold cyan]{mobile_url}[/bold cyan]  ← set this as instance URL in the app")
     else:
         console.print(f"  Auth:    [yellow]none[/yellow] (single-user, no instance.db)")
     console.print(f"  Browser: [cyan]http://localhost:{port}[/cyan]")
@@ -196,8 +225,8 @@ def dev(
 
     # Start bincio serve only when instance.db exists (auth / write API)
     if has_auth:
-        console.print(f"Starting [cyan]bincio serve[/cyan] on port {api_port}…")
-        t = threading.Thread(target=_start_serve, args=(data, api_port, site), daemon=True)
+        console.print(f"Starting [cyan]bincio serve[/cyan] on {api_host}:{api_port}…")
+        t = threading.Thread(target=_start_serve, args=(data, api_port, site, api_host), daemon=True)
         t.start()
 
     # Watch data dir for sidecar/activity changes → auto-merge
@@ -213,6 +242,14 @@ def dev(
         "PUBLIC_MOBILE_APP": "",                        # Record/Convert tabs off by default
         "VITE_API_PORT": str(api_port),                 # picked up by astro.config.mjs
     }
+
+    # Astro's file watcher opens many handles; macOS defaults to 256, which
+    # causes EMFILE. Raise the limit before forking so the child inherits it.
+    if platform.system() == "Darwin":
+        target = 65536
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        if soft < target:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (min(target, hard), hard))
 
     # Start astro dev in foreground (Ctrl+C stops everything)
     console.print(f"Starting [cyan]astro dev[/cyan] on port {port}…")

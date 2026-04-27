@@ -169,7 +169,13 @@ def extract(
         console.print(f"Loaded Strava metadata from [cyan]{cfg.metadata_csv.name}[/cyan].")
 
     dedup = DedupIndex(output_dir=cfg.output_dir)
-    known_hashes: frozenset = frozenset(dedup._by_hash.keys())
+    # Only skip files whose output actually exists — the cache can outlive a
+    # --fresh wipe or manual deletion of the activities directory.
+    _acts_dir = cfg.output_dir / "activities"
+    known_hashes: frozenset = frozenset(
+        h for h, act_id in dedup._by_hash.items()
+        if (_acts_dir / f"{act_id}.json").exists()
+    )
 
     n_workers = workers or cfg.workers or os.cpu_count() or 4
     console.print(f"Using [bold]{n_workers}[/bold] worker processes.")
